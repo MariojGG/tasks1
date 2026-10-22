@@ -1,0 +1,61 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - 'composeApp/**'
+      - 'kmp/**'
+      - 'data/**'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build:
+    name: Build Windows Application
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Fix symlinks for Windows runner
+        shell: pwsh
+        run: |
+          if (Test-Path "kmp/src/commonMain/composeResources/values-in") {
+            Remove-Item -Recurse -Force "kmp/src/commonMain/composeResources/values-in"
+          }
+          if (Test-Path "kmp/src/commonMain/composeResources/values-iw") {
+            Remove-Item -Recurse -Force "kmp/src/commonMain/composeResources/values-iw"
+          }
+
+      - name: Package Windows Distributions
+        run: .\gradlew.bat :composeApp:packageMsi :composeApp:createDistributable
+
+      - name: Upload MSI Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tasks-Windows-Installer
+          path: composeApp/build/compose/binaries/main/msi/*.msi
+          if-no-files-found: ignore
+
+      - name: Compress Portable Distributable
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "composeApp/build/compose/binaries/main/app/*" -DestinationPath "composeApp/build/Tasks-Windows-Portable.zip"
+
+      - name: Upload Portable Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tasks-Windows-Portable
+          path: composeApp/build/Tasks-Windows-Portable.zip

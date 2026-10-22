@@ -174,10 +174,11 @@ private fun resolveLogDir(): File {
 actual fun platformModule(): Module = module {
 
     single {
+        val isWindows = platform() == Platform.WINDOWS
         PlatformConfiguration(
             versionCode = JvmBuildConfig.VERSION_CODE,
             billingProvider = BillingProvider.STRIPE,
-            thirdPartySyncRequiresPro = true,
+            thirdPartySyncRequiresPro = if (isWindows) false else true,
             supportsCaldav = true,
             supportsEteSync = true,
             supportsGoogleTasks = true,
@@ -376,16 +377,39 @@ actual fun platformModule(): Module = module {
     }
     single<SubscriptionProvider> {
         val tasksPreferences: TasksPreferences = get()
-        EntitlementSubscriptionProvider(
-            entitlement = get(),
-            debugPro = if (TasksBuildConfig.DEBUG) {
-                tasksPreferences.flow(TasksPreferences.debugPro, false)
-            } else {
-                flowOf(false)
-            },
-            googleAndMicrosoftRequirePro = true,
-            verifyBeforeSync = true,
-        )
+        if (platform() == Platform.WINDOWS) {
+            object : SubscriptionProvider {
+                override val subscription: Flow<SubscriptionProvider.SubscriptionInfo?> =
+                    flowOf(
+                        SubscriptionProvider.SubscriptionInfo(
+                            sku = "annual_30",
+                            isMonthly = false,
+                            isTasksSubscription = false,
+                            isGitHubSponsor = false,
+                            isCardSubscription = false,
+                        )
+                    )
+
+                override suspend fun getFormattedPrice(sku: String): String? = ""
+
+                override suspend fun awaitVerification(): Boolean = true
+
+                override suspend fun checkTier(): Boolean = true
+
+                override val googleAndMicrosoftRequirePro: Boolean get() = false
+            }
+        } else {
+            EntitlementSubscriptionProvider(
+                entitlement = get(),
+                debugPro = if (TasksBuildConfig.DEBUG) {
+                    tasksPreferences.flow(TasksPreferences.debugPro, false)
+                } else {
+                    flowOf(false)
+                },
+                googleAndMicrosoftRequirePro = true,
+                verifyBeforeSync = true,
+            )
+        }
     }
     single<DesktopLinkClient> {
         DesktopLinkClientImpl(
