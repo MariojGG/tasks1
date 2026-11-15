@@ -32,12 +32,11 @@ import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.tasks.compose.settings.conflictingAccountMessage
 import org.tasks.resources.getString
 import tasks.kmp.generated.resources.Res
-import org.tasks.TasksUrls
 import tasks.kmp.generated.resources.url_sponsor
 import tasks.kmp.generated.resources.wrong_account
-import tasks.kmp.generated.resources.wrong_account_message
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
@@ -52,8 +51,8 @@ import org.tasks.TasksApplication.Companion.IS_GOOGLE_PLAY
 import org.tasks.analytics.Firebase
 import org.tasks.billing.Inventory
 import org.tasks.billing.PurchaseActivity
-import org.tasks.billing.PurchaseActivityViewModel.Companion.EXTRA_NAME_YOUR_PRICE
-import org.tasks.billing.PurchaseActivityViewModel.Companion.EXTRA_SOURCE
+import org.tasks.billing.PurchaseActivity.Companion.EXTRA_NAME_YOUR_PRICE
+import org.tasks.billing.PurchaseActivity.Companion.EXTRA_SOURCE
 import org.tasks.data.dao.CaldavDao
 import org.tasks.data.entity.CaldavAccount
 import org.tasks.data.entity.CaldavAccount.Companion.TYPE_TASKS
@@ -116,7 +115,7 @@ class SignInActivity : ComponentActivity() {
         viewModel.error.observe(this, this::handleError)
 
         lifecycleScope.launch {
-            val autoSelect = getAutoSelectPlatform()
+            val autoSelect = getAutoSelectPlatform() ?: requestedPlatform()
             if (autoSelect != null) {
                 setContent {
                     TasksTheme(
@@ -159,6 +158,16 @@ class SignInActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun requestedPlatform(): Platform? =
+        when (intent.getStringExtra(EXTRA_PROVIDER)?.let { name ->
+            org.tasks.compose.SignInProvider.entries.firstOrNull { it.name == name }
+        }) {
+            org.tasks.compose.SignInProvider.GOOGLE -> Platform.GOOGLE
+            org.tasks.compose.SignInProvider.APPLE -> Platform.APPLE
+            org.tasks.compose.SignInProvider.GITHUB -> Platform.GITHUB
+            null -> null
+        }
 
     private suspend fun getAutoSelectPlatform(): Platform? {
         val existingAccount = caldavDao.getAccounts(TYPE_TASKS).firstOrNull() ?: return null
@@ -243,11 +252,7 @@ class SignInActivity : ComponentActivity() {
                 Text(kmpStringResource(Res.string.wrong_account))
             },
             text = {
-                Text(kmpStringResource(
-                    Res.string.wrong_account_message,
-                    maskedEmail,
-                    TasksUrls.SUPPORT_EMAIL,
-                ))
+                Text(conflictingAccountMessage(maskedEmail))
             },
             confirmButton = {
                 TextButton(onClick = onDismiss) {
@@ -534,8 +539,15 @@ class SignInActivity : ComponentActivity() {
                 serverCallbackUri ?: configuration.redirectUri)
                 .setScope(configuration.scope)
         if (serverCallbackUri != null) {
+            val codeVerifier = PKCE.generateVerifier().also { authService.serverCodeVerifier = it }
             authRequestBuilder
-                .setState(RedirectState.encode(PKCE.generateVerifier(), configuration.redirectUri.toString()))
+                .setState(
+                    RedirectState.encode(
+                        PKCE.generateVerifier(),
+                        configuration.redirectUri.toString(),
+                        codeVerifier,
+                    )
+                )
                 .setResponseMode("form_post")
                 .setCodeVerifier(null)
         }
@@ -544,6 +556,7 @@ class SignInActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ERROR = "extra_error"
+        const val EXTRA_PROVIDER = "extra_provider"
         private const val RC_AUTH = 100
         private const val RC_PURCHASE = 101
     }

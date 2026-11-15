@@ -1,9 +1,9 @@
 package org.tasks.billing
 
 interface StripeClient {
-    suspend fun prices(): List<StripePrice>?
+    suspend fun prices(): List<BillingOption>?
 
-    suspend fun createCheckout(priceId: String?): StripeCheckout
+    suspend fun createCheckout(priceId: String?, purchaseJwt: String? = null): StripeCheckout
 
     suspend fun pollCheckout(code: String): StripeCheckoutStatus
 
@@ -23,6 +23,12 @@ data class StripePurchase(
     val formattedPrice: String? = null,
 )
 
+data class StripeReceipt(
+    val purchaseJwt: String,
+    val sku: String? = null,
+    val formattedPrice: String? = null,
+)
+
 sealed interface StripeCheckout {
     data class Started(
         val code: String,
@@ -32,7 +38,18 @@ sealed interface StripeCheckout {
 
     data object UnknownPrice : StripeCheckout
 
-    data class SubscriptionExists(val product: String? = null) : StripeCheckout
+    data class SubscriptionExists(
+        val product: String? = null,
+        val receipt: StripeReceipt? = null,
+    ) : StripeCheckout
+
+    data class Collected(val outcome: StripeRestoreOutcome) : StripeCheckout
+
+    data object RestoreRequired : StripeCheckout
+
+    data class AccountInUse(val existingAccount: String) : StripeCheckout
+
+    data object AccountLinkConflict : StripeCheckout
 
     data object RateLimited : StripeCheckout
 
@@ -58,9 +75,14 @@ sealed interface StripeCheckoutStatus {
 }
 
 sealed interface StripeChange {
-    data class Changed(val entitles: Boolean) : StripeChange
+    data class Changed(
+        val entitles: Boolean,
+        val resumed: Boolean = false,
+    ) : StripeChange
 
     data object UnknownPrice : StripeChange
+
+    data object CardDeclined : StripeChange
 
     data object NotLinked : StripeChange
 
@@ -90,7 +112,14 @@ sealed interface StripeRestoreRequest {
 }
 
 sealed interface StripeRestore {
-    data class Restored(val purchase: StripePurchase) : StripeRestore
+    data class Restored(
+        val purchase: StripePurchase,
+        val covered: Boolean = true,
+        val isActive: Boolean = true,
+        val terms: PurchaseTerms? = null,
+    ) : StripeRestore
+
+    data object NothingToRestore : StripeRestore
 
     data object InvalidCode : StripeRestore
 

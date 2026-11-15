@@ -8,7 +8,7 @@ accompanist = "0.37.3"
 activity-compose = "1.13.0"
 appauth = "0.11.1"
 appcompat = "1.8.0"
-appfunctions = "1.0.0-alpha11"
+appfunctions = "1.0.0-rc01"
 coil = "2.7.0"
 compose = "2026.09.00"
 compose-multiplatform = "1.12.2"
@@ -17,7 +17,7 @@ constraintlayout = "2.2.2"
 dagger-hilt = "2.60.1"
 dashclock-api = "2.0.0"
 desugar_jdk_libs = "2.1.5"
-etebase = "2.3.2"
+etebase = "1.0.0-beta02"
 firebase = "35.0.2"
 firebase-crashlytics-gradle = "3.0.8"
 google-oauth2 = "1.39.0"
@@ -64,6 +64,7 @@ protobuf = "4.33.2"
 recyclerview = "1.4.0"
 room = "3.0.3"
 shortcut-badger = "1.1.22"
+slf4j = "2.0.19"
 timber = "5.0.1"
 swiperefreshlayout = "1.2.0"
 work = "2.12.0"
@@ -140,7 +141,8 @@ dmfs-opentasks-provider = { module = "com.github.tasks.opentasks:opentasks-provi
 dmfs-recur = { module = "org.dmfs:lib-recur", version = "0.11.4" }
 #noinspection NewerVersionAvailable
 dmfs-rfc5545-datetime = { module = "org.dmfs:rfc5545-datetime", version = "0.2.4" }
-etebase = { module = "com.etebase:client", version.ref = "etebase" }
+etebase-android = { module = "org.tasks:etebase-android", version.ref = "etebase" }
+etebase-jvm = { module = "org.tasks:etebase-jvm", version.ref = "etebase" }
 firebase = { module = "com.google.firebase:firebase-bom", version.ref = "firebase" }
 firebase-config = { module = "com.google.firebase:firebase-config" }
 firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
@@ -228,6 +230,7 @@ oss-licenses-plugin = { module = "com.google.android.gms:oss-licenses-plugin", v
 pebblekit = { module = "com.getpebble:pebblekit", version = "4.0.1" }
 persistent-cookiejar = { module = "com.github.franmontiel:PersistentCookieJar", version.ref = "persistent-cookiejar" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.16.1" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 play-billing-ktx = { module = "com.android.billingclient:billing-ktx", version = "9.1.0" }
 play-review = { module = "com.google.android.play:review-ktx", version = "2.0.2" }
 play-services-code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "play-services-code-scanner" }

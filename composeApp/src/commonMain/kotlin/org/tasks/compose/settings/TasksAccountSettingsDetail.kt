@@ -14,12 +14,17 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
+import co.touchlab.kermit.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,8 +33,10 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.tasks.auth.OAuthProvider
 import org.tasks.auth.SignInHandler
+import org.tasks.billing.EntitlementProvider
 import org.tasks.billing.StripePurchases
 import org.tasks.compose.pricing.cardPortalLauncher
+import org.tasks.caldav.PurchaseTokenInUseException
 import org.tasks.compose.accounts.Platform
 import org.tasks.TasksUrls
 import org.tasks.viewmodel.TasksAccountViewModel
@@ -61,12 +68,14 @@ fun TasksAccountSettingsDetail(
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
-    LaunchedEffect(pane.account.uuid) {
-        viewModel.setAccountUuid(pane.account.uuid!!)
+    LaunchedEffect(pane.uuid) {
+        viewModel.setAccountUuid(pane.uuid)
         viewModel.refreshAccount()
     }
 
     val state by viewModel.state.collectAsState()
+    var conflictingAccount by remember { mutableStateOf<String?>(null) }
+    if (!state.loaded) return
     val sponsorUrl = stringResource(Res.string.url_sponsor)
     val appPasswordsUrl = stringResource(Res.string.url_app_passwords)
     val donateUrl = stringResource(Res.string.url_donate)
@@ -104,7 +113,17 @@ fun TasksAccountSettingsDetail(
                         state.isApple -> OAuthProvider.APPLE
                         else -> OAuthProvider.GOOGLE
                     }
-                    scope.launch { signInHandler.signIn(Platform.TASKS_ORG, provider) }
+                    scope.launch {
+                        try {
+                            signInHandler.signIn(Platform.TASKS_ORG, provider)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: PurchaseTokenInUseException) {
+                            conflictingAccount = e.existingAccount
+                        } catch (e: Exception) {
+                            Logger.e(e) { "Tasks.org re-authentication failed" }
+                        }
+                    }
                 },
                 onSubscribe = {
                     uriHandler.openUri(donateUrl)
@@ -147,16 +166,17 @@ fun TasksAccountSettingsDetail(
                 onAddAccount = onAddAccountClick,
                 onModifySubscription = onModifySubscription,
                 onCancelSubscription = {
-                    if (state.isCardSubscription) {
-                        openCardPortal()
-                    } else {
-                        uriHandler.openUri(TasksUrls.GOOGLE_PLAY_SUBSCRIPTIONS)
+                    when (state.subscriptionProvider) {
+                        EntitlementProvider.STRIPE -> openCardPortal()
+                        EntitlementProvider.GITHUB_SPONSOR -> uriHandler.openUri(sponsorUrl)
+                        EntitlementProvider.PLAY, null ->
+                            uriHandler.openUri(TasksUrls.GOOGLE_PLAY_SUBSCRIPTIONS)
                     }
                 },
                 onLogout = {
                     scope.launch {
                         withContext(NonCancellable) {
-                            viewModel.logout(state.account ?: pane.account)
+                            viewModel.logout()
                         }
                         onNavigateBack()
                     }
@@ -167,6 +187,12 @@ fun TasksAccountSettingsDetail(
                 },
                 onDismissTos = { viewModel.dismissTos() },
             )
+            conflictingAccount?.let { existingAccount ->
+                MessageDialog(
+                    message = conflictingAccountMessage(existingAccount),
+                    onDismiss = { conflictingAccount = null },
+                )
+            }
         }
     }
 }

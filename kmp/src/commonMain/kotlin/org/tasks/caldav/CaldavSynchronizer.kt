@@ -149,7 +149,7 @@ class CaldavSynchronizer(
         } catch (e: HttpException) {
             when(e.statusCode) {
                 402, 405, 451, in 500..599 -> {}
-                else -> { reporting.reportException(e) }
+                else -> { reporting.reportException(CaldavHttpError(account.serverType, e)) }
             }
             Logger.e(e) { "$account: ${e.message}" }
             setError(account, e.displayMessage)
@@ -345,9 +345,13 @@ class CaldavSynchronizer(
         val changed = members.filter { vCard: Response ->
             val eTag = vCard[GetETag::class]?.eTag
             if (eTag.isNullOrBlank()) {
+                Logger.w(TAG) { "Skipping ${vCard.href}, no etag in the calendar-query response" }
                 return@filter false
             }
             eTag != caldavDao.getTask(caldavCalendar.uuid!!, vCard.hrefName())?.etag
+        }
+        Logger.d(TAG) {
+            "calendar-query returned ${members.size} member(s), ${changed.size} changed"
         }
         val unusable = mutableListOf<Url>()
         for (items in changed.chunked(30)) {

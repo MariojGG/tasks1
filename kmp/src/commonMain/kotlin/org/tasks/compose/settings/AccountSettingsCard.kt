@@ -1,5 +1,8 @@
 package org.tasks.compose.settings
 
+import org.tasks.billing.ModifySubscription
+import org.tasks.billing.PurchaseTerms
+import org.tasks.compose.pricing.intervalPrice
 import org.tasks.themes.TasksIcons
 import org.tasks.compose.components.SymbolIcon
 import androidx.compose.foundation.clickable
@@ -34,8 +37,6 @@ import tasks.kmp.generated.resources.donate_nag
 import tasks.kmp.generated.resources.guest
 import tasks.kmp.generated.resources.ic_round_icon
 import tasks.kmp.generated.resources.manage_subscription
-import tasks.kmp.generated.resources.price_per_month_with_currency
-import tasks.kmp.generated.resources.price_per_year_with_currency
 import tasks.kmp.generated.resources.pro_card_credit
 import tasks.kmp.generated.resources.sign_in_to_connect
 import tasks.kmp.generated.resources.supporter
@@ -58,23 +59,44 @@ data class AccountData(
     val hasSubscription: Boolean = false,
     val creditCents: Int? = null,
     val creditCurrency: String? = null,
+    val terms: PurchaseTerms? = null,
 )
 
 sealed class ProCardState {
     open val credit: String? get() = null
 
+    open val terms: PurchaseTerms? get() = null
+
+    open val formattedPrice: String? get() = null
+
+    open val isMonthly: Boolean get() = false
+
+    @Composable
+    fun renewalPrice(): String? = formattedPrice
+        ?.takeIf { it.isNotBlank() }
+        ?.let { intervalPrice(it, isMonthly) }
+
     data object Upgrade : ProCardState()
     data class Subscribed(
-        val isMonthly: Boolean,
-        val formattedPrice: String? = null,
+        override val isMonthly: Boolean,
+        override val formattedPrice: String? = null,
         override val credit: String? = null,
+        override val terms: PurchaseTerms? = null,
     ) : ProCardState()
-    data class SignIn(override val credit: String? = null) : ProCardState()
+    data class SignIn(
+        override val credit: String? = null,
+        override val terms: PurchaseTerms? = null,
+        override val formattedPrice: String? = null,
+        override val isMonthly: Boolean = false,
+    ) : ProCardState()
     data class TasksOrgAccount(
         val account: CaldavAccount,
         val isLoading: Boolean = false,
         val accountData: AccountData? = null,
         override val credit: String? = null,
+        override val terms: PurchaseTerms? = null,
+        override val formattedPrice: String? = null,
+        override val isMonthly: Boolean = false,
     ) : ProCardState()
     data object Donate : ProCardState()
 }
@@ -127,17 +149,10 @@ fun AccountSettingsCard(
                         state.formattedPrice == null -> null
                         state.formattedPrice.isBlank() ->
                             stringResource(Res.string.supporter_summary_no_price)
-                        else -> {
-                            val interval = if (state.isMonthly) {
-                                Res.string.price_per_month_with_currency
-                            } else {
-                                Res.string.price_per_year_with_currency
-                            }
-                            stringResource(
-                                Res.string.supporter_summary,
-                                stringResource(interval, state.formattedPrice)
-                            )
-                        }
+                        else -> stringResource(
+                            Res.string.supporter_summary,
+                            intervalPrice(state.formattedPrice, state.isMonthly),
+                        )
                     }
                     showError = false
                 }
@@ -232,6 +247,13 @@ fun AccountSettingsCard(
                             Color.Transparent,
                     )
                 }
+                state.terms?.renewalNote(state.renewalPrice())?.let { renewal ->
+                    Text(
+                        text = renewal,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 state.credit?.let { credit ->
                     Text(
                         text = stringResource(Res.string.pro_card_credit, credit),
@@ -280,12 +302,18 @@ fun AccountSettingsCard(
 @Composable
 fun ManageSubscriptionSheetContent(
     onUpgrade: () -> Unit,
-    onModify: () -> Unit,
+    onChangePlan: () -> Unit,
+    onOpenSponsorPage: () -> Unit,
     onCancel: () -> Unit,
+    modifyAction: ModifySubscription,
     modifier: Modifier = Modifier,
     showUpgrade: Boolean = true,
-    showModify: Boolean = true,
 ) {
+    val onModify = when (modifyAction) {
+        ModifySubscription.NONE -> null
+        ModifySubscription.CHANGE_PLAN -> onChangePlan
+        ModifySubscription.OPEN_SPONSOR_PAGE -> onOpenSponsorPage
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -302,7 +330,7 @@ fun ManageSubscriptionSheetContent(
                 titleOverride = stringResource(Res.string.tasks_org_account),
             )
         }
-        if (showModify) {
+        if (onModify != null) {
             SettingsItemCard {
                 PreferenceRow(
                     title = stringResource(Res.string.manage_subscription),

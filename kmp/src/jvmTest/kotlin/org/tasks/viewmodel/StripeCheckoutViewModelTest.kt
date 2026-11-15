@@ -1,13 +1,21 @@
 package org.tasks.viewmodel
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,48 +23,92 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.tasks.InMemoryDataStore
+import org.tasks.analytics.AnalyticsEvents
+import org.tasks.analytics.Reporting
 import org.tasks.billing.StripeCheckout
 import org.tasks.billing.StripeCheckouts
 import org.tasks.billing.StripeCollection
 import org.tasks.billing.StripeChange
 import org.tasks.billing.PurchaseTerms
 import org.tasks.billing.StripePlan
-import org.tasks.billing.StripePrice
+import org.tasks.billing.BillingOption
+import org.tasks.billing.ForeignCoverage
 import org.tasks.billing.StripeRestoreOutcome
+import org.tasks.billing.UnlockSource
+import org.tasks.preferences.TasksPreferences
 import org.tasks.time.DateTimeUtils2
 import org.tasks.viewmodel.StripeCheckoutViewModel.Notice
+import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.CATALOG_ATTEMPTS
+import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.CATALOG_RETRY_MILLIS
 import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.MAX_BACKOFF_MILLIS
+import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.MAX_UNANSWERED_POLLS
 import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.POLL_INTERVAL_MILLIS
 import org.tasks.viewmodel.StripeCheckoutViewModel.Companion.RATE_LIMITED_BACKOFF_MILLIS
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StripeCheckoutViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private val offer = StripePrice("pri_30", "annual_30", 3000, entitles = true)
-    private val supportOffer = StripePrice("pri_01", "annual_01", 100, entitles = false)
+    private val offer = BillingOption("pri_30", "annual_30", 3000, entitles = true)
+    private val supportOffer = BillingOption("pri_01", "annual_01", 100, entitles = false)
 
-    private var prices: List<StripePrice>? = listOf(
+    private var prices: List<BillingOption>? = listOf(
         offer,
-        StripePrice("pri_12", "annual_12", 1200, entitles = false),
+        BillingOption("pri_12", "annual_12", 1200, entitles = false),
         supportOffer,
     )
+    private val priceAnswers = ArrayDeque<List<BillingOption>?>()
+    private var priceReads = 0
     private var plan: StripePlan? = null
+    private var knownCustomer = false
+    private var planDelay = 0L
+    private var coverage = ForeignCoverage()
     private var change: StripeChange = StripeChange.Changed(entitles = true)
-    private var changes = mutableListOf<StripePrice>()
+    private var changes = mutableListOf<BillingOption>()
     private var requestedCheckouts = 0
     private var checkout: StripeCheckout =
         StripeCheckout.Started("c0de", "https://pay.stripe.com/x", expiresIn(CODE_LIFETIME))
     private val collections = ArrayDeque<StripeCollection>()
+    private var collection: StripeCollection = StripeCollection.Pending
     private var polls = 0
+    private var collectDelay = 0L
+    private var changeDelay = 0L
+    private var checkoutDelay = 0L
+    private val settled = mutableMapOf<String, StripeCollection>()
+    private var tierReads = 0
+    private val events = mutableListOf<Pair<String, Map<String, Any>>>()
+
+    private val reporting = object : Reporting {
+        override val tasksPreferences = TasksPreferences(InMemoryDataStore())
+        override val analyticsEnabled = true
+        override fun logEvent(event: String, vararg params: Pair<String, Any>) {
+            events.add(event to params.toMap())
+        }
+        override fun addTask(source: String) = Unit
+        override fun completeTask(source: String) = Unit
+        override fun setSku(sku: String?) = Unit
+        override fun reportException(t: Throwable, fatal: Boolean) = Unit
+    }
 
     private val purchases = object : StripeCheckouts {
-        override suspend fun prices() = prices
-        override suspend fun currentPlan() = plan
-        override suspend fun createCheckout(price: StripePrice?): StripeCheckout {
+        override suspend fun prices(): List<BillingOption>? {
+            priceReads++
+            return if (priceAnswers.isEmpty()) prices else priceAnswers.removeFirst()
+        }
+        override suspend fun currentPlan(refresh: Boolean): StripePlan? {
+            delay(planDelay)
+            if (refresh) tierReads++
+            return plan
+        }
+        override suspend fun hasStripeCustomer() = knownCustomer
+        override suspend fun coveredElsewhere() = coverage
+        override suspend fun createCheckout(price: BillingOption?): StripeCheckout {
+            delay(checkoutDelay)
             requestedCheckouts++
             return checkout
         }
-        override suspend fun changePlan(price: StripePrice): StripeChange {
+        override suspend fun changePlan(price: BillingOption): StripeChange {
+            delay(changeDelay)
             changes.add(price)
             if (change is StripeChange.Changed) {
                 plan = StripePlan(price.sku)
@@ -64,18 +116,37 @@ class StripeCheckoutViewModelTest {
             return change
         }
         override suspend fun collectCheckout(code: String): StripeCollection {
+            delay(collectDelay)
             polls++
-            return collections.removeFirstOrNull() ?: StripeCollection.Pending
+            settled[code]?.let { return it }
+            return collections.removeFirstOrNull() ?: collection
         }
     }
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
 
-    @After
-    fun tearDown() = Dispatchers.resetMain()
+    private val appScope = CoroutineScope(SupervisorJob())
 
-    private fun viewModel() = StripeCheckoutViewModel(purchases)
+    @After
+    fun tearDown() {
+        appScope.cancel()
+        Dispatchers.resetMain()
+    }
+
+    private fun viewModel() = StripeCheckoutViewModel(purchases, reporting, appScope)
+
+    private fun storedViewModel(store: ViewModelStore) = ViewModelProvider.create(
+        store,
+        viewModelFactory { initializer { viewModel() } },
+    )[StripeCheckoutViewModel::class]
+
+    private fun logged(state: String) = events
+        .filter { it.first == AnalyticsEvents.BILLING_FLOW_RESULT }
+        .onEach { assertEquals("stripe", it.second[AnalyticsEvents.PARAM_PROVIDER]) }
+        .map { it.second }
+        .filter { it[AnalyticsEvents.PARAM_STATE] == state }
+        .map { it - AnalyticsEvents.PARAM_PROVIDER - AnalyticsEvents.PARAM_STATE }
 
     @Test
     fun loadsTheCatalogFromTheServer() = runTest(dispatcher) {
@@ -291,7 +362,7 @@ class StripeCheckoutViewModelTest {
     }
 
     @Test
-    fun cancellingStopsThePoll() = runTest(dispatcher) {
+    fun cancellingChecksOnceThenWatchesQuietlyUntilTheCodeExpires() = runTest(dispatcher) {
         val viewModel = viewModel()
         runCurrent()
         viewModel.select(offer)
@@ -300,9 +371,15 @@ class StripeCheckoutViewModelTest {
         viewModel.cancel()
         advanceTimeBy(POLL_INTERVAL_MILLIS * 3)
 
-        assertEquals(0, polls)
+        assertEquals(1, polls)
         assertFalse(viewModel.viewState.value.busy)
         assertNull(viewModel.viewState.value.checkoutUrl)
+
+        advanceTimeBy(CODE_LIFETIME)
+        val polled = polls
+        advanceTimeBy(CODE_LIFETIME)
+        assertEquals(polled, polls)
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASED).isEmpty())
     }
 
     @Test
@@ -394,11 +471,57 @@ class StripeCheckoutViewModelTest {
     fun aLadderThatCannotBeListedLeavesTheCatalogEmpty() = runTest(dispatcher) {
         prices = null
         val viewModel = viewModel()
-        runCurrent()
+        advanceTimeBy(CATALOG_RETRY_MILLIS * CATALOG_ATTEMPTS + 1)
 
         val state = viewModel.viewState.value
         assertFalse(state.loadingPrices)
         assertTrue(state.catalog.isEmpty)
+        assertEquals(
+            AnalyticsEvents.Checkout.UNAVAILABLE,
+            logged(AnalyticsEvents.BillingFlow.QUERY_SKUS_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aLadderTheServerMissedTheFirstTimeIsAskedForAgain() = runTest(dispatcher) {
+        priceAnswers.add(null)
+
+        val viewModel = viewModel()
+        runCurrent()
+        assertTrue(viewModel.viewState.value.loadingPrices)
+
+        advanceTimeBy(CATALOG_RETRY_MILLIS + 1)
+
+        val state = viewModel.viewState.value
+        assertEquals("annual_30", state.catalog.cloudAnnual?.sku)
+        assertFalse(state.loadingPrices)
+        assertEquals(CATALOG_ATTEMPTS, priceReads)
+    }
+
+    @Test
+    fun aLadderTheServerKeepsMissingIsNotAskedForForever() = runTest(dispatcher) {
+        prices = null
+
+        val viewModel = viewModel()
+        advanceTimeBy(CATALOG_RETRY_MILLIS * 20)
+
+        assertTrue(viewModel.viewState.value.catalog.isEmpty)
+        assertEquals(CATALOG_ATTEMPTS, priceReads)
+    }
+
+    @Test
+    fun aLadderTheServerMissedOnARefreshIsNotAskedForAgain() = runTest(dispatcher) {
+        checkout = StripeCheckout.UnknownPrice
+        val viewModel = viewModel()
+        runCurrent()
+        val listed = priceReads
+        prices = null
+
+        viewModel.select(offer)
+        advanceTimeBy(CATALOG_RETRY_MILLIS * 20)
+
+        assertEquals("annual_30", viewModel.viewState.value.catalog.cloudAnnual?.sku)
+        assertEquals(listed + 1, priceReads)
     }
 
     @Test
@@ -539,6 +662,177 @@ class StripeCheckoutViewModelTest {
     }
 
     @Test
+    fun aSubscriptionThatStoppedBillingIsSoldAgainAtTheSamePrice() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_30",
+            terms = PurchaseTerms(status = "canceled", expires = 1760000000000L),
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+        assertEquals("https://pay.stripe.com/x", viewModel.viewState.value.checkoutUrl)
+        assertTrue(changes.isEmpty())
+    }
+
+    @Test
+    fun aSubscriptionSetToCancelIsResumedAtTheSamePrice() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_30",
+            terms = PurchaseTerms(status = "active", cancelAtPeriodEnd = true),
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(offer, viewModel.viewState.value.confirmChange?.price)
+
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(listOf(offer), changes)
+        assertEquals(0, requestedCheckouts)
+    }
+
+    @Test
+    fun thePriceAlreadyBilledIsNotWorthSelectingAgain() = runTest(dispatcher) {
+        plan = StripePlan(sku = "annual_30", terms = PurchaseTerms(status = "active"))
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(0, requestedCheckouts)
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.confirmChange)
+    }
+
+    @Test
+    fun aChangeDoesNotReadTheTierBackTwice() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        val viewModel = viewModel()
+        runCurrent()
+        tierReads = 0
+
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(0, tierReads)
+        assertEquals("annual_30", viewModel.viewState.value.plan?.sku)
+    }
+
+    @Test
+    fun aServerThatStopsAnsweringBacksOffAndThenSaysSo() = runTest(dispatcher) {
+        collection = StripeCollection.Unreachable
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS * 8 + 1)
+
+        assertEquals(4, polls)
+        assertNull(viewModel.viewState.value.notice)
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+
+        advanceTimeBy(MAX_BACKOFF_MILLIS * 4)
+
+        assertTrue(polls >= MAX_UNANSWERED_POLLS)
+        assertEquals(Notice.Unavailable, viewModel.viewState.value.notice)
+        assertFalse(viewModel.viewState.value.busy)
+        assertEquals(
+            AnalyticsEvents.Checkout.UNREACHABLE,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+
+        collection = StripeCollection.Collected(StripeRestoreOutcome.Restored)
+        advanceTimeBy(StripeCheckoutViewModel.MAX_ABANDONED_POLL_MILLIS + 1)
+
+        assertEquals(true, logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_LATE])
+    }
+
+    @Test
+    fun aPollThatAnswersAgainStartsTheBackoffOver() = runTest(dispatcher) {
+        collections.add(StripeCollection.Unreachable)
+        collections.add(StripeCollection.Unreachable)
+        collections.add(StripeCollection.Pending)
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS * 5 + 1)
+
+        assertEquals(4, polls)
+    }
+
+    @Test
+    fun aDeviceThatHasBoughtBeforeIsAKnownCustomer() = runTest(dispatcher) {
+        knownCustomer = true
+        val viewModel = viewModel()
+
+        runCurrent()
+
+        assertEquals(true, viewModel.viewState.value.knownCustomer)
+    }
+
+    @Test
+    fun whetherTheyHaveBoughtBeforeIsUnknownUntilChecked() {
+        val viewModel = viewModel()
+
+        assertNull(viewModel.viewState.value.knownCustomer)
+    }
+
+    @Test
+    fun aKnownCustomerIsRecognisedWithoutWaitingForTheirPlan() = runTest(dispatcher) {
+        knownCustomer = true
+        planDelay = 60_000L
+        val viewModel = viewModel()
+
+        runCurrent()
+
+        assertEquals(true, viewModel.viewState.value.knownCustomer)
+        assertNull(viewModel.viewState.value.plan)
+    }
+
+    @Test
+    fun aSubscriptionCollectedAtTheTillIsNotRepriced() = runTest(dispatcher) {
+        checkout = StripeCheckout.Collected(StripeRestoreOutcome.Restored)
+        plan = null
+        val viewModel = viewModel()
+        runCurrent()
+        plan = StripePlan("annual_30")
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.notice)
+        assertNull(viewModel.viewState.value.checkoutUrl)
+        assertEquals("annual_30", viewModel.viewState.value.plan?.sku)
+    }
+
+    @Test
+    fun aCollectedSubscriptionBelowTheFloorStillAsksForAnUpgrade() = runTest(dispatcher) {
+        checkout = StripeCheckout.Collected(StripeRestoreOutcome.NeedsUpgrade)
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(Notice.NeedsUpgrade, viewModel.viewState.value.notice)
+    }
+
+    @Test
     fun aPlanThatTurnsOutNotToExistIsBoughtInstead() = runTest(dispatcher) {
         plan = StripePlan("annual_01")
         change = StripeChange.NotLinked
@@ -573,7 +867,6 @@ class StripeCheckoutViewModelTest {
     fun mapsTheOtherPlanChangeFailures() = runTest(dispatcher) {
         listOf(
             StripeChange.UnknownPrice to Notice.Failed,
-            StripeChange.Unavailable to Notice.Unavailable,
             StripeChange.RateLimited to Notice.RateLimited,
             StripeChange.Failed to Notice.Failed,
         ).forEach { (refusal, expected) ->
@@ -590,6 +883,264 @@ class StripeCheckoutViewModelTest {
             assertEquals(expected, viewModel.viewState.value.notice)
             assertFalse(viewModel.viewState.value.busy)
         }
+    }
+
+    @Test
+    fun aChangeStripeCouldNotBeAskedAboutIsSentAgain() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.Unavailable
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(Notice.ChangeUnavailable, viewModel.viewState.value.notice)
+
+        change = StripeChange.Changed(entitles = true)
+        viewModel.retryChange()
+        runCurrent()
+
+        assertEquals(listOf(offer, offer), changes)
+        assertNull(viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun aRefusedCardIsToldApartFromAnOutage() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.CardDeclined
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(Notice.CardDeclined, viewModel.viewState.value.notice)
+
+        change = StripeChange.Changed(entitles = true)
+        viewModel.retryChange()
+        runCurrent()
+
+        assertEquals(listOf(offer, offer), changes)
+        assertNull(viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun aDismissedRetryableNoticeLeavesNothingToRetry() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.Unavailable
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.confirmChange()
+        runCurrent()
+        viewModel.dismissNotice()
+        viewModel.retryChange()
+        runCurrent()
+
+        assertEquals(listOf(offer), changes)
+    }
+
+    @Test
+    fun aChangeThatTookBackACancellationLeavesTheScreenLikeAnyOtherChange() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.Changed(entitles = true, resumed = true)
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertNull(viewModel.viewState.value.notice)
+        assertTrue(viewModel.viewState.value.planChanged)
+    }
+
+    @Test
+    fun aCloudTierIsSoldToAnAccountAnotherProviderPaysForSoTheyCanMoveToACard() =
+        runTest(dispatcher) {
+            coverage = ForeignCoverage(covered = true, source = UnlockSource.GOOGLE_PLAY)
+            val viewModel = viewModel()
+            runCurrent()
+
+            viewModel.select(offer)
+            runCurrent()
+
+            assertEquals(1, requestedCheckouts)
+            assertNull(viewModel.viewState.value.notice)
+        }
+
+    @Test
+    fun theProviderThatPaysIsCarriedForTheWarningTheCardShows() = runTest(dispatcher) {
+        coverage = ForeignCoverage(covered = true, source = UnlockSource.GOOGLE_PLAY)
+        val viewModel = viewModel()
+        runCurrent()
+
+        assertTrue(viewModel.viewState.value.coveredElsewhere)
+        assertEquals(UnlockSource.GOOGLE_PLAY, viewModel.viewState.value.coveredBy)
+    }
+
+    @Test
+    fun aSupporterRungIsStillSoldToAnAccountAnotherProviderPaysFor() = runTest(dispatcher) {
+        coverage = ForeignCoverage(covered = true, source = UnlockSource.GOOGLE_PLAY)
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(supportOffer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+    }
+
+    @Test
+    fun aCustomerOnAnotherAccountIsNotAPlanChange() = runTest(dispatcher) {
+        checkout = StripeCheckout.AccountInUse("a***@example.com")
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(Notice.AccountInUse("a***@example.com"), viewModel.viewState.value.notice)
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.busySku)
+    }
+
+    @Test
+    fun anAccountLinkedToAnotherCustomerIsNotSentRoundTheHouses() = runTest(dispatcher) {
+        checkout = StripeCheckout.AccountLinkConflict
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(Notice.AccountLinkConflict, viewModel.viewState.value.notice)
+        assertTrue(changes.isEmpty())
+        assertEquals(1, requestedCheckouts)
+    }
+
+    @Test
+    fun aRefusalOnlyARestoreCanRepairOffersOne() = runTest(dispatcher) {
+        checkout = StripeCheckout.RestoreRequired
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(Notice.RestoreRequired, viewModel.viewState.value.notice)
+        assertFalse(viewModel.viewState.value.busy)
+    }
+
+    @Test
+    fun aRefusedSaleTheServerThenKnowsNoSubscriptionForStopsThere() = runTest(dispatcher) {
+        checkout = StripeCheckout.SubscriptionExists(product = "annual_01")
+        change = StripeChange.NotLinked
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+        assertEquals(listOf(offer), changes)
+        assertEquals(Notice.Failed, viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun aSubscriptionThatHasStoppedCoveringIsSoldAgainRatherThanRepriced() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_01",
+            terms = PurchaseTerms(status = "canceled"),
+            covered = false,
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.confirmChange)
+    }
+
+    @Test
+    fun aCancelledCloudRowInsideItsGraceIsStillSoldTo() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "monthly_03",
+            terms = PurchaseTerms(status = "canceled"),
+            covered = true,
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun aSupporterRungStripeHasStoppedBillingIsSoldTo() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_01",
+            terms = PurchaseTerms(status = "canceled"),
+            covered = true,
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(1, requestedCheckouts)
+        assertTrue(changes.isEmpty())
+        assertNull(viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun aSubscriptionCancelledForTheEndOfItsPeriodIsRepriced() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_01",
+            terms = PurchaseTerms(status = "active", cancelAtPeriodEnd = true),
+            covered = true,
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(offer, viewModel.viewState.value.confirmChange?.price)
+        assertEquals(0, requestedCheckouts)
+    }
+
+    @Test
+    fun aSubscriptionStripeIsStillBillingIsRepriced() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_01",
+            terms = PurchaseTerms(status = "past_due"),
+            covered = true,
+        )
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(offer, viewModel.viewState.value.confirmChange?.price)
+        assertEquals(0, requestedCheckouts)
     }
 
     @Test
@@ -630,6 +1181,651 @@ class StripeCheckoutViewModelTest {
 
         assertNull(viewModel.viewState.value.notice)
         assertFalse(viewModel.viewState.value.busy)
+    }
+
+    @Test
+    fun aCheckoutThatReachedTheBrowserIsLogged() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                )
+            ),
+            logged(AnalyticsEvents.BillingFlow.LAUNCHED),
+        )
+    }
+
+    @Test
+    fun aMonthlyPriceIsLoggedAsMonthly() = runTest(dispatcher) {
+        val monthly = BillingOption(
+            priceId = "pri_m",
+            sku = "monthly_03",
+            amountCents = 299,
+            interval = BillingOption.INTERVAL_MONTH,
+            entitles = true,
+        )
+        prices = listOf(monthly)
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(monthly)
+        runCurrent()
+
+        assertEquals(
+            AnalyticsEvents.PERIOD_MONTHLY,
+            logged(AnalyticsEvents.BillingFlow.LAUNCHED).single()[AnalyticsEvents.PARAM_PERIOD],
+        )
+    }
+
+    @Test
+    fun everyCheckoutRefusalIsLoggedWithItsReason() = runTest(dispatcher) {
+        listOf(
+            StripeCheckout.RateLimited to AnalyticsEvents.Checkout.RATE_LIMITED,
+            StripeCheckout.Unavailable to AnalyticsEvents.Checkout.UNAVAILABLE,
+            StripeCheckout.UnknownPrice to AnalyticsEvents.Checkout.UNKNOWN_PRICE,
+            StripeCheckout.Failed to AnalyticsEvents.Checkout.FAILED,
+            StripeCheckout.RestoreRequired to AnalyticsEvents.Checkout.RESTORE_REQUIRED,
+            StripeCheckout.AccountLinkConflict to AnalyticsEvents.Checkout.ACCOUNT_LINK_CONFLICT,
+            StripeCheckout.AccountInUse("b**@e**.com") to AnalyticsEvents.Checkout.ACCOUNT_IN_USE,
+        ).forEach { (refusal, reason) ->
+            events.clear()
+            checkout = refusal
+            val viewModel = viewModel()
+            runCurrent()
+
+            viewModel.select(offer)
+            runCurrent()
+
+            assertEquals(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                    AnalyticsEvents.PARAM_RESULT to reason,
+                ),
+                logged(AnalyticsEvents.BillingFlow.PURCHASE_FAILED).single(),
+            )
+            assertTrue(logged(AnalyticsEvents.BillingFlow.LAUNCHED).isEmpty())
+        }
+    }
+
+    @Test
+    fun aCollectedCheckoutIsLoggedWithWhatItLeftBehind() = runTest(dispatcher) {
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Restored))
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                    AnalyticsEvents.PARAM_RESULT to AnalyticsEvents.Checkout.COLLECTED,
+                )
+            ),
+            logged(AnalyticsEvents.BillingFlow.PURCHASED),
+        )
+    }
+
+    @Test
+    fun aCollectionBelowTheCloudFloorIsLoggedAsNeedingAnUpgrade() = runTest(dispatcher) {
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.NeedsUpgrade))
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.NEEDS_UPGRADE,
+            logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aReceiptThatWouldNotEncryptIsLoggedAsSuch() = runTest(dispatcher) {
+        collections.add(
+            StripeCollection.Collected(StripeRestoreOutcome.StorageFailed(encryptionFailed = true))
+        )
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.ENCRYPTION_FAILED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aSubscriptionCollectedAtTheTillIsLoggedAsARestore() = runTest(dispatcher) {
+        checkout = StripeCheckout.Collected(StripeRestoreOutcome.Restored)
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                AnalyticsEvents.RESTORE_SUCCESS to mapOf(
+                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_STRIPE,
+                    AnalyticsEvents.PARAM_RESULT to AnalyticsEvents.Checkout.RESTORED,
+                ),
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun aCodeThatRanOutIsLoggedAsExpired() = runTest(dispatcher) {
+        checkout = StripeCheckout.Started(
+            "c0de",
+            "https://pay.stripe.com/x",
+            expiresIn(POLL_INTERVAL_MILLIS * 3 + 1_000),
+        )
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS * 6)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.EXPIRED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aCodeSomethingElseAlreadyCollectedIsLoggedAsGone() = runTest(dispatcher) {
+        collections.add(StripeCollection.Gone)
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.GONE,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aSubscriptionTheServerWontHonourIsLoggedAsInvalid() = runTest(dispatcher) {
+        collections.add(StripeCollection.SubscriptionInvalid)
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.SUBSCRIPTION_INVALID,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun cancellingIsLoggedEvenInAnOutageAndAPaymentMadeAfterwardsStillCounts() = runTest(dispatcher) {
+        collection = StripeCollection.Unreachable
+        val viewModel = checkoutInBrowser()
+        assertEquals("https://pay.stripe.com/x", viewModel.reopenCheckout())
+        assertEquals(
+            "annual_30",
+            events.single { it.first == AnalyticsEvents.PRICING_REOPEN_CHECKOUT }.second[AnalyticsEvents.PARAM_SKU],
+        )
+
+        viewModel.cancel()
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                    AnalyticsEvents.PARAM_RESULT to AnalyticsEvents.Checkout.USER_CANCELED,
+                ),
+            ),
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED),
+        )
+
+        settled["c0de"] = StripeCollection.Collected(StripeRestoreOutcome.Restored)
+        advanceTimeBy(StripeCheckoutViewModel.ABANDONED_POLL_MILLIS + 1)
+
+        assertEquals(true, logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_LATE])
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).size)
+    }
+
+    @Test
+    fun cancellingLogsWhatTheLastCheckFound() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Restored))
+
+        viewModel.cancel()
+        runCurrent()
+
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.PURCHASED).size)
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+        assertFalse(viewModel.viewState.value.busy)
+
+        collections.add(StripeCollection.Gone)
+        viewModel.select(offer)
+        runCurrent()
+        viewModel.cancel()
+        runCurrent()
+
+        assertEquals(
+            listOf(AnalyticsEvents.Checkout.GONE),
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).map { it[AnalyticsEvents.PARAM_RESULT] },
+        )
+    }
+
+    @Test
+    fun aPlanChangeThatClosesThePaywallIsStillLogged() = runTest(dispatcher) {
+        plan = StripePlan("annual_12", PurchaseTerms(status = "active"))
+        val store = ViewModelStore()
+        val viewModel = storedViewModel(store)
+        runCurrent()
+        viewModel.select(offer)
+        viewModel.confirmChange()
+        changeDelay = 1_000L
+        runCurrent()
+
+        store.clear()
+        advanceTimeBy(1_001L)
+
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.LAUNCHED).size)
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.PURCHASED).size)
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+    }
+
+    @Test
+    fun leavingADoubleTappedPlanChangeUnconfirmedIsOneCancelledLaunch() = runTest(dispatcher) {
+        plan = StripePlan("annual_12", PurchaseTerms(status = "active"))
+        val store = ViewModelStore()
+        val viewModel = storedViewModel(store)
+        runCurrent()
+        viewModel.select(offer)
+        viewModel.select(offer)
+
+        store.clear()
+
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.LAUNCHED).size)
+        assertEquals(
+            AnalyticsEvents.Checkout.USER_CANCELED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aCheckoutThatAlreadySettledIsNotLoggedAsAbandoned() = runTest(dispatcher) {
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Restored))
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        viewModel.cancel()
+        runCurrent()
+
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+    }
+
+    @Test
+    fun aPlanChangeIsLoggedWithItsResult() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                )
+            ),
+            logged(AnalyticsEvents.BillingFlow.LAUNCHED),
+        )
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_30",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                    AnalyticsEvents.PARAM_RESULT to AnalyticsEvents.Checkout.CHANGED,
+                )
+            ),
+            logged(AnalyticsEvents.BillingFlow.PURCHASED),
+        )
+    }
+
+    @Test
+    fun aResumedSubscriptionIsLoggedAsResumed() = runTest(dispatcher) {
+        plan = StripePlan(
+            sku = "annual_30",
+            terms = PurchaseTerms(status = "active", cancelAtPeriodEnd = true),
+        )
+        change = StripeChange.Changed(entitles = true, resumed = true)
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(
+            AnalyticsEvents.Checkout.RESUMED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aDeclinedCardIsLogged() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.CardDeclined
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        viewModel.confirmChange()
+        runCurrent()
+
+        assertEquals(
+            AnalyticsEvents.Checkout.CARD_DECLINED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aDismissedPlanChangeIsLogged() = runTest(dispatcher) {
+        plan = StripePlan("annual_30")
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(supportOffer)
+        runCurrent()
+
+        viewModel.dismissChange()
+
+        assertEquals(
+            listOf(
+                mapOf(
+                    AnalyticsEvents.PARAM_SKU to "annual_01",
+                    AnalyticsEvents.PARAM_PERIOD to AnalyticsEvents.PERIOD_ANNUAL,
+                    AnalyticsEvents.PARAM_RESULT to AnalyticsEvents.Checkout.USER_CANCELED,
+                )
+            ),
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED),
+        )
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.LAUNCHED).size)
+    }
+
+    @Test
+    fun aPlanThatTurnsOutNotToExistIsSoldUnderTheSameLaunch() = runTest(dispatcher) {
+        plan = StripePlan("annual_01")
+        change = StripeChange.NotLinked
+        mapOf(
+            checkout to emptyList(),
+            StripeCheckout.Collected(StripeRestoreOutcome.Restored) to listOf(
+                Triple(AnalyticsEvents.RESTORE_SUCCESS, null, AnalyticsEvents.Checkout.RESTORED),
+            ),
+            StripeCheckout.RateLimited to listOf(
+                Triple(
+                    AnalyticsEvents.BILLING_FLOW_RESULT,
+                    AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED,
+                    AnalyticsEvents.Checkout.RATE_LIMITED,
+                ),
+            ),
+        ).forEach { (sale, expected) ->
+            events.clear()
+            checkout = sale
+            val viewModel = viewModel()
+            runCurrent()
+            viewModel.select(offer)
+            runCurrent()
+
+            viewModel.confirmChange()
+            runCurrent()
+
+            assertEquals(1, logged(AnalyticsEvents.BillingFlow.LAUNCHED).size)
+            assertEquals(
+                expected,
+                events
+                    .filter { it.second[AnalyticsEvents.PARAM_STATE] != AnalyticsEvents.BillingFlow.LAUNCHED }
+                    .map { (event, params) ->
+                        Triple(event, params[AnalyticsEvents.PARAM_STATE], params[AnalyticsEvents.PARAM_RESULT])
+                    },
+            )
+        }
+    }
+
+    @Test
+    fun leavingBeforeTheCheckoutIsCreatedLaunchesNothing() = runTest(dispatcher) {
+        checkoutDelay = 1_000L
+        val store = ViewModelStore()
+        val viewModel = storedViewModel(store)
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+
+        store.clear()
+        advanceTimeBy(CODE_LIFETIME)
+
+        assertTrue(logged(AnalyticsEvents.BillingFlow.LAUNCHED).isEmpty())
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+        assertEquals(0, polls)
+    }
+
+    @Test
+    fun leavingThePaywallMidPollIsCancelledOnceAndAPaymentMadeAfterwardsStillCounts() = runTest(dispatcher) {
+        val store = ViewModelStore()
+        val viewModel = storedViewModel(store)
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+        collectDelay = 1_000L
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 500)
+
+        store.clear()
+        advanceTimeBy(2_000L)
+        settled["c0de"] = StripeCollection.Collected(StripeRestoreOutcome.Restored)
+        advanceTimeBy(StripeCheckoutViewModel.ABANDONED_POLL_MILLIS + 1_001L)
+
+        assertEquals(
+            AnalyticsEvents.Checkout.USER_CANCELED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+        assertEquals(true, logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_LATE])
+        val polled = polls
+        advanceTimeBy(CODE_LIFETIME)
+        assertEquals(polled, polls)
+    }
+
+    @Test
+    fun cancellingWhileAPollIsInFlightWaitsForItsAnswer() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        collectDelay = 1_000L
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 500)
+
+        collectDelay = 0L
+        viewModel.cancel()
+        runCurrent()
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Restored))
+        advanceTimeBy(1_000L)
+
+        assertEquals(1, polls)
+        assertNull(logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_LATE])
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+    }
+
+    private suspend fun kotlinx.coroutines.test.TestScope.checkoutInBrowser(): StripeCheckoutViewModel {
+        val viewModel = viewModel()
+        runCurrent()
+        viewModel.select(offer)
+        runCurrent()
+        return viewModel
+    }
+
+    @Test
+    fun aBuyerWhoPaidBeforeClosingTheBrowserIsCollectedStraightAway() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Restored))
+
+        viewModel.browserClosed()
+        runCurrent()
+
+        assertEquals(1, polls)
+        assertNull(viewModel.viewState.value.checkoutUrl)
+        assertFalse(viewModel.viewState.value.busy)
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.PURCHASED).size)
+        assertTrue(logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).isEmpty())
+    }
+
+    @Test
+    fun closingTheBrowserWithoutPayingDismissesTheWait() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+
+        viewModel.browserClosed()
+        runCurrent()
+
+        assertNull(viewModel.viewState.value.checkoutUrl)
+        assertFalse(viewModel.viewState.value.busy)
+        assertNull(viewModel.viewState.value.notice)
+        assertEquals(
+            AnalyticsEvents.Checkout.BROWSER_CLOSED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aPaymentThatSettlesAfterTheBrowserClosedIsStillReported() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        viewModel.browserClosed()
+        runCurrent()
+        collections.add(StripeCollection.Collected(StripeRestoreOutcome.Ended))
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertEquals(2, polls)
+        assertEquals(Notice.SubscriptionCancelled, viewModel.viewState.value.notice)
+        assertEquals(
+            listOf(AnalyticsEvents.Checkout.BROWSER_CLOSED),
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).map { it[AnalyticsEvents.PARAM_RESULT] },
+        )
+        assertEquals(
+            AnalyticsEvents.Checkout.ENDED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun aCheckoutLeftInTheBrowserExpiresWithoutAWord() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        viewModel.browserClosed()
+        runCurrent()
+
+        advanceTimeBy(CODE_LIFETIME + 1)
+
+        assertNull(viewModel.viewState.value.notice)
+        assertEquals(
+            AnalyticsEvents.Checkout.BROWSER_CLOSED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+        val polled = polls
+        advanceTimeBy(POLL_INTERVAL_MILLIS * 3)
+        assertEquals(polled, polls)
+    }
+
+    @Test
+    fun aCheckoutThatFailsAfterTheBrowserClosedSaysNothing() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        viewModel.browserClosed()
+        runCurrent()
+        collections.add(StripeCollection.Gone)
+
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 1)
+
+        assertNull(viewModel.viewState.value.notice)
+        assertEquals(
+            AnalyticsEvents.Checkout.BROWSER_CLOSED,
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).single()[AnalyticsEvents.PARAM_RESULT],
+        )
+    }
+
+    @Test
+    fun returningWithNoCheckoutOpenChecksNothing() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        runCurrent()
+
+        viewModel.browserClosed()
+        runCurrent()
+
+        assertEquals(0, polls)
+    }
+
+    @Test
+    fun aNewPurchaseAfterLeavingTheBrowserReplacesTheQuietWait() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        viewModel.browserClosed()
+        runCurrent()
+
+        viewModel.select(offer)
+        runCurrent()
+
+        assertEquals("https://pay.stripe.com/x", viewModel.viewState.value.checkoutUrl)
+        advanceTimeBy(CODE_LIFETIME + 1)
+        assertEquals(Notice.Expired, viewModel.viewState.value.notice)
+    }
+
+    @Test
+    fun payingForACheckoutLeftInTheBrowserMidPollIsStillCollectedAfterStartingAnother() = runTest(dispatcher) {
+        val viewModel = checkoutInBrowser()
+        viewModel.browserClosed()
+        runCurrent()
+        collectDelay = 1_000L
+        advanceTimeBy(POLL_INTERVAL_MILLIS + 500)
+        checkout = StripeCheckout.Started("s3cond", "https://pay.stripe.com/y", expiresIn(CODE_LIFETIME))
+        viewModel.select(offer)
+        runCurrent()
+        collectDelay = 0L
+        advanceTimeBy(1_000L)
+
+        settled["c0de"] = StripeCollection.Collected(StripeRestoreOutcome.Restored)
+        advanceTimeBy(POLL_INTERVAL_MILLIS)
+
+        assertNull(viewModel.viewState.value.checkoutUrl)
+        assertFalse(viewModel.viewState.value.busy)
+        assertEquals(1, logged(AnalyticsEvents.BillingFlow.PURCHASED).size)
+        assertEquals(
+            listOf(AnalyticsEvents.Checkout.BROWSER_CLOSED, AnalyticsEvents.Checkout.SUPERSEDED),
+            logged(AnalyticsEvents.BillingFlow.PURCHASE_UPDATED_FAILED).map { it[AnalyticsEvents.PARAM_RESULT] },
+        )
+        advanceTimeBy(CODE_LIFETIME + 1)
+        assertNull(viewModel.viewState.value.notice)
     }
 
     private fun expiresIn(millis: Long) = DateTimeUtils2.currentTimeMillis() + millis

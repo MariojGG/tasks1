@@ -42,15 +42,27 @@ class TasksPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    suspend fun setIfGreater(key: Preferences.Key<Long>, value: Long, default: Long = 0L): Boolean {
-        var updated = false
+    suspend fun setLongIf(
+        key: Preferences.Key<Long>,
+        value: Long,
+        shouldSet: (stored: Long?) -> Boolean,
+    ): Boolean {
+        var applied = false
         dataStore.edit {
-            if ((it[key] ?: default) < value) {
+            applied = shouldSet(it[key])
+            if (applied) {
                 it[key] = value
-                updated = true
             }
         }
-        return updated
+        return applied
+    }
+
+    suspend fun getOrCreate(key: Preferences.Key<String>, value: String): String {
+        var current: String? = null
+        dataStore.edit { prefs ->
+            current = prefs[key]?.takeIf { it.isNotBlank() } ?: value.also { prefs[key] = it }
+        }
+        return current ?: value
     }
 
     suspend fun <T> getAndSet(key: Preferences.Key<T>, value: T): T? {
@@ -72,6 +84,7 @@ class TasksPreferences(private val dataStore: DataStore<Preferences>) {
         val acceptedTosVersion = intPreferencesKey("accepted_tos_version")
         val hasLoggedOnboardingComplete = booleanPreferencesKey("has_logged_onboarding_complete")
         val subscriptionDismissedAccounts = stringSetPreferencesKey("subscription_dismissed_accounts")
+        val playPurchases = stringPreferencesKey("play_purchases")
         val syncSource = stringPreferencesKey("sync_source")
         val cachedAccountData = stringPreferencesKey("cached_account_data")
         val serverEnvironment = stringPreferencesKey("server_environment")
@@ -103,6 +116,7 @@ class TasksPreferences(private val dataStore: DataStore<Preferences>) {
         val needsCloudOnboarding = booleanPreferencesKey("needs_cloud_onboarding")
         val apnsToken = stringPreferencesKey("apns_token")
         val pushFallbackToken = stringPreferencesKey("push_fallback_token")
+        val installId = stringPreferencesKey("install_id")
         val metadataPrimaryAccount = longPreferencesKey("metadata_primary_account")
         val metadataStoreAccount = longPreferencesKey("metadata_store_account")
         val metadataRev = stringPreferencesKey("metadata_rev")

@@ -9,7 +9,6 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.fragment.app.Fragment
@@ -31,12 +30,11 @@ import tasks.kmp.generated.resources.url_app_passwords
 import tasks.kmp.generated.resources.url_sponsor
 import org.tasks.analytics.Firebase
 import org.tasks.auth.SignInActivity
-import org.tasks.billing.BillingClient
+import org.tasks.billing.PlayBilling
 import org.tasks.billing.Inventory
 import org.tasks.billing.PurchaseActivity
-import org.tasks.billing.PurchaseActivityViewModel.Companion.EXTRA_NAME_YOUR_PRICE
-import org.tasks.billing.PurchaseActivityViewModel.Companion.EXTRA_SHOW_MORE_OPTIONS
-import org.tasks.billing.PurchaseActivityViewModel.Companion.EXTRA_SOURCE
+import org.tasks.billing.PurchaseActivity.Companion.EXTRA_NAME_YOUR_PRICE
+import org.tasks.billing.PurchaseActivity.Companion.EXTRA_SOURCE
 import org.tasks.compose.accounts.AddAccountActivity
 import org.tasks.compose.settings.TasksAccountScreen
 import org.tasks.themes.TasksSettingsTheme
@@ -48,6 +46,7 @@ import org.tasks.caldav.TasksAccountDataRepository
 import org.tasks.preferences.fragments.MainSettingsComposeFragment.Companion.REQUEST_TASKS_ORG
 import org.tasks.themes.Theme
 import org.tasks.utility.copyToClipboard
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -56,7 +55,7 @@ class TasksAccount : Fragment() {
     @Inject lateinit var inventory: Inventory
     @Inject lateinit var localBroadcastManager: LocalBroadcastManager
     @Inject lateinit var firebase: Firebase
-    @Inject lateinit var billingClient: BillingClient
+    @Inject lateinit var billing: PlayBilling
     @Inject lateinit var caldavDao: CaldavDao
     @Inject lateinit var theme: Theme
     @Inject lateinit var accountDataRepository: TasksAccountDataRepository
@@ -86,7 +85,7 @@ class TasksAccount : Fragment() {
         ) {
             val state by viewModel.state.collectAsStateWithLifecycle()
             val account = state.account
-            val subscription by inventory.subscription.observeAsState()
+            val subscription by inventory.subscription.collectAsStateWithLifecycle()
 
             // Trigger re-reads on refresh events
             val trigger by refreshTrigger
@@ -167,12 +166,11 @@ class TasksAccount : Fragment() {
                     startActivity(
                         Intent(context, PurchaseActivity::class.java)
                             .putExtra(EXTRA_NAME_YOUR_PRICE, false)
-                            .putExtra(EXTRA_SHOW_MORE_OPTIONS, true)
                             .putExtra(EXTRA_SOURCE, "account_settings"),
                     )
                 },
                 onCancelSubscription = {
-                    inventory.unsubscribe(requireContext())
+                    lifecycleScope.launch { inventory.unsubscribe(requireContext()) }
                 },
                 onLogout = {
                     lifecycleScope.launch {
@@ -226,7 +224,11 @@ class TasksAccount : Fragment() {
         if (requestCode == REQUEST_PURCHASE) {
             if (resultCode == Activity.RESULT_OK) {
                 lifecycleScope.launch {
-                    billingClient.queryPurchases()
+                    try {
+                        billing.queryPurchases()
+                    } catch (e: Exception) {
+                        Timber.e(e)
+                    }
                 }
             }
         } else {

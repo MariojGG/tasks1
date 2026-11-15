@@ -10,8 +10,10 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 import org.tasks.di.commonModule
 import org.tasks.di.platformModule
+import org.tasks.jobs.BackgroundWork
 import org.tasks.logging.FileLogWriter
 import org.tasks.logging.SeverityFilterLogWriter
+import org.tasks.logging.installKermitJulHandler
 import org.tasks.logging.logStartup
 import org.tasks.opentasks.OpenTaskContentObserver
 import org.tasks.preferences.AppPreferences
@@ -31,6 +33,7 @@ class TasksApplication : Application() {
         }
         Logger.setMinSeverity(if (TasksBuildConfig.DEBUG) Severity.Verbose else Severity.Debug)
         Logger.setLogWriters(logcat, FileLogWriter(logDir))
+        installKermitJulHandler()
         logStartup()
         org.tasks.caldav.CaldavClient.registerFactories()
         startKoin {
@@ -44,6 +47,7 @@ class TasksApplication : Application() {
         }
         koin.getOrNull<org.tasks.fcm.PushTokenManager>()
             ?.registerTokenForAllAccounts()
+        koin.get<BackgroundWork>().updatePurchases()
         val observer = OpenTaskContentObserver(
             context = this,
             syncAdapters = koin.get<SyncAdapters>(),

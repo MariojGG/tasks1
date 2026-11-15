@@ -177,19 +177,12 @@
     <string name="discard_changes">Zahodit změny?</string>
     <string name="discard">Zahodit</string>
     <string name="delete">Smazat</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d seznam</item>
-        <item quantity="few">%1$d seznamy</item>
-        <item quantity="other">%1$d seznamů</item>
-    </plurals>
     <string name="debug">Ladění</string>
     <string name="failed_to_save_task">Nepodařilo se uložit úlohu</string>
     <string name="link_desktop">Propojit s aplikací pro počítače</string>
     <string name="link_desktop_description">Odemkněte aplikaci pro počítače předplatným na Google Play</string>
-    <string name="link_desktop_instructions">Otevřete na počítači aplikaci Tasks.org a přejděte do nabídky Přidat účet pro zobrazení QR kódu. Poté klepněte na tlačítko níže pro jeho naskenování.</string>
     <string name="scan_qr_code">Naksenovat QR kód</string>
     <string name="link_desktop_success">Aplikace úspěšně propojena!</string>
-    <string name="link_desktop_error">Nepodařilo se propojit aplikaci. Zkuste to prosím znovu.</string>
     <string name="done">Hotovo</string>
     <string name="retry">Zkusit znovu</string>
     <string name="qr_code">QR kód</string>
@@ -207,8 +200,6 @@
     <string name="url_invalid_scheme">Musí začínat na http(s)://</string>
     <string name="url_required">Zadejte URL</string>
     <string name="username_required">Zadejte uživatelské jméno</string>
-    <string name="etesync_account_description">Vyžaduje účet na EteSync.com nebo vlastní server</string>
-    <string name="already_subscribed">Již máte předplatné?</string>
     <string name="sign_in_subtitle">Již máte předplatné nebo jste pozvaným hostem?</string>
     <string name="show_advanced_settings">Zobrazit pokročilé možnosti</string>
     <string name="app_settings">Nastavení aplikace</string>
@@ -229,12 +220,10 @@
     <string name="error_no_sponsorship">Nenalezeno žádné sponzorství</string>
     <string name="error_sponsorship_delay">Nová sponzorství nemusí být okamžitě dostupná, zkuste to znovu za několik minut.</string>
     <string name="error_contact_support">Pokud potíže přetrvávají, kontaktujte %1$s</string>
-    <string name="sponsor_on_github">Sponzorovat na GitHubu</string>
     <string name="unlock_pro_opening_browser">Otevírání v prohlížeči…</string>
     <string name="google_play_subscription">Předplatné Google Play</string>
     <string name="github_sponsorship">Sponzorování přes GitHub</string>
     <string name="error_github_verification_failed">Ověření selhalo. Prosím, zkuste to znovu.</string>
-    <string name="pricing_subtitle">Svobodné a s otevřeným zdrojovým kódem. Předplatné podporují vývoj a odemykají další funkce.</string>
     <string name="pricing_cloud_description">Odemkněte všechny funkce aplikace a připojte se k Tasks.org Cloud synchronizaci.</string>
     <string name="pricing_from">Od %1$s</string>
     <string name="pricing_nyp_description">Vyberte si svou vlastní cenu předplatného. Toto odemkne všechny funkce aplikace.</string>
@@ -243,10 +232,8 @@
     <string name="monthly">Měsíčně</string>
     <string name="restore_purchases">Renovovat nákupy</string>
     <string name="pricing_cloud_monthly_note">Účtováno měsíčně</string>
-    <string name="pricing_cloud_feature_1">Okamžitá synchronizace mezi Android aplikací a počítačem</string>
     <string name="pricing_cloud_feature_2">Sdílení seznamu s přáteli a rodinou</string>
     <string name="pricing_cloud_feature_3">Email-do-úlohy se soukromou schránkou</string>
-    <string name="pricing_cloud_feature_4">Připojit se k Apple Upozornění na iOS</string>
     <string name="pricing_nyp_feature_1">Vlastní motivy a ikony</string>
     <string name="pricing_nyp_feature_2">Synchronizace po vlastní ose (self-hosted) přes CalDAV a EteSync</string>
     <string name="pricing_nyp_feature_3">Podpořit software s otevřeným zdrojovým kódem</string>
@@ -312,7 +299,6 @@
     <string name="create_a_list">Vytvořit seznam</string>
     <string name="migrate_to_cloud">Přejít na Tasks.org Cloud</string>
     <string name="cloud_onboarding_welcome_title">Vítejte ve službě Tasks.org Cloud</string>
-    <string name="cloud_onboarding_welcome_body">Přihlaste se přes Google pro vytvoření vašeho účtu Tasks.org Cloud</string>
     <string name="cloud_onboarding_not_now">Nyní ne</string>
     <string name="cloud_onboarding_faq_title">Často kladené dotazy</string>
     <string name="cloud_onboarding_create_list_title">Začněme</string>
@@ -618,4 +604,6 @@
     <string name="mcp_copy">Kopírovat</string>
     <string name="new_filter">Vytvořit nový filtr</string>
     <string name="subscription_required">Vyžadováno předplatné</string>
+    <string name="upgrade_blurb_1">Ahoj! Jmenuji se Alex a jsem nezávislý vývojář aplikace Tasks.org</string>
+    <string name="upgrade_blurb_2">Strávil jsem tisíce hodin prací na Tasks.org a bezplatně zveřejňuji veškerý zdrojový kód online. Za účelem podpory mé práce některé funkce vyžadují předplatné</string>
 </resources>

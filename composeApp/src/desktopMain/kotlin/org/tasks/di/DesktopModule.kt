@@ -7,14 +7,12 @@ import at.bitfire.cert4android.DesktopUserDecisionRegistry
 import com.todoroo.astrid.alarms.AlarmService
 import com.todoroo.astrid.service.CommonUpgrades
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.bind
 import org.koin.dsl.module
 import org.tasks.PlatformConfiguration
-import org.tasks.TasksBuildConfig
 import org.tasks.analytics.PostHogReporting
 import org.tasks.analytics.Reporting
 import org.tasks.api.ApiListManager
@@ -33,8 +31,11 @@ import org.tasks.billing.PurchaseEntitlement
 import org.tasks.billing.DesktopLinkClient
 import org.tasks.billing.DesktopLinkClientImpl
 import org.tasks.billing.EntitlementSubscriptionProvider
+import org.tasks.billing.debugProFlow
+import org.tasks.extensions.desktopOpenUrl
 import org.tasks.billing.GitHubSponsorClient
-import org.tasks.billing.GitHubSponsorClientImpl
+import org.tasks.billing.GitHubSponsorVerifier
+import org.tasks.billing.LoopbackGitHubSponsorClient
 import org.tasks.billing.SubscriptionProvider
 import org.tasks.caldav.FileStorage
 import org.tasks.caldav.VtodoCache
@@ -178,6 +179,7 @@ actual fun platformModule(): Module = module {
         PlatformConfiguration(
             versionCode = JvmBuildConfig.VERSION_CODE,
             billingProvider = BillingProvider.STRIPE,
+            supportsPlayLinkRestore = true,
             thirdPartySyncRequiresPro = if (isWindows) false else true,
             supportsCaldav = true,
             supportsEteSync = true,
@@ -372,25 +374,23 @@ actual fun platformModule(): Module = module {
             serverEnvironment = get(),
             scope = get(),
             json = get(),
-            syncAdapters = get(),
+            syncAdapters = { get() },
         ).also { it.initialize() }
     }
     single<SubscriptionProvider> {
-        val tasksPreferences: TasksPreferences = get()
         if (platform() == Platform.WINDOWS) {
             object : SubscriptionProvider {
-                override val subscription: Flow<SubscriptionProvider.SubscriptionInfo?> =
-                    flowOf(
-                        SubscriptionProvider.SubscriptionInfo(
-                            sku = "annual_30",
-                            isMonthly = false,
-                            isTasksSubscription = false,
-                            isGitHubSponsor = false,
-                            isCardSubscription = false,
-                        )
+                override val current: SubscriptionProvider.SubscriptionInfo =
+                    SubscriptionProvider.SubscriptionInfo(
+                        sku = "annual_30",
+                        isMonthly = false,
+                        isTasksSubscription = false,
                     )
 
-                override suspend fun getFormattedPrice(sku: String): String? = ""
+                override val subscription: Flow<SubscriptionProvider.SubscriptionInfo?> =
+                    flowOf(current)
+
+                override suspend fun getFormattedPrice(sku: String): String = ""
 
                 override suspend fun awaitVerification(): Boolean = true
 
@@ -401,11 +401,7 @@ actual fun platformModule(): Module = module {
         } else {
             EntitlementSubscriptionProvider(
                 entitlement = get(),
-                debugPro = if (TasksBuildConfig.DEBUG) {
-                    tasksPreferences.flow(TasksPreferences.debugPro, false)
-                } else {
-                    flowOf(false)
-                },
+                debugPro = get<TasksPreferences>().debugProFlow,
                 googleAndMicrosoftRequirePro = true,
                 verifyBeforeSync = true,
             )
@@ -420,14 +416,13 @@ actual fun platformModule(): Module = module {
         )
     }
     single<GitHubSponsorClient> {
-        GitHubSponsorClientImpl(
-            httpClientFactory = get(),
-            serverEnvironment = get(),
-            purchaseEntitlement = get(),
-            json = get(),
+        LoopbackGitHubSponsorClient(
+            verify = get<GitHubSponsorVerifier>()::verify,
+            openUrl = ::desktopOpenUrl,
+            closeBrowserTab = true,
         )
     }
-    single { SseTokenProvider() } bind FcmTokenProvider::class
+    single { SseTokenProvider(get()) } bind FcmTokenProvider::class
     single {
         SseClient(
             scope = get(),
@@ -436,7 +431,7 @@ actual fun platformModule(): Module = module {
             encryption = get<KeyStoreEncryption>(),
             environment = get(),
             httpClientFactory = get<KtorClientFactory>(),
-            token = { get<SseTokenProvider>().token },
+            token = { get<SseTokenProvider>().getToken() },
         )
     }
     single {

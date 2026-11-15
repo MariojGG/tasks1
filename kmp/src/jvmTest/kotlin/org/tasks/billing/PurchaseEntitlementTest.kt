@@ -27,6 +27,8 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoInteractions
 import org.tasks.auth.TasksServerEnvironment
+import org.tasks.billing.PurchaseEntitlement.StoreResult
+import org.tasks.http.KtorClientFactory
 import org.tasks.http.OkHttpClientFactory
 import org.tasks.http.OkHttpKtorClientFactory
 import org.tasks.security.KeyProvider
@@ -109,6 +111,62 @@ class PurchaseEntitlementTest {
     }
 
     @Test
+    fun aGitHubSponsorshipDoesNotReplaceACardSubscription() = runBlocking<Unit> {
+        entitlement().apply {
+            initialize()
+            assertTrue(awaitReady())
+            storeEntitlement(
+                jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+                refreshToken = "card-refresh",
+                sku = "monthly_03",
+                provider = EntitlementProvider.STRIPE,
+            )
+
+            val result = storeEntitlement(
+                jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+                refreshToken = "github-refresh",
+                sku = "annual_01",
+                provider = EntitlementProvider.GITHUB_SPONSOR,
+            )
+
+            assertEquals(StoreResult.STORED, result)
+            assertEquals(EntitlementProvider.STRIPE, provider.first())
+            assertEquals("monthly_03", sku.first())
+        }
+        assertTrue(entitlementFile.readBytes().isNotEmpty())
+        entitlement().apply {
+            initialize()
+            assertTrue(awaitReady())
+            assertEquals(EntitlementProvider.STRIPE, provider.first())
+        }
+    }
+
+    @Test
+    fun aGitHubSponsorshipReplacesALapsedCardSubscription() = runBlocking<Unit> {
+        entitlement().apply {
+            initialize()
+            assertTrue(awaitReady())
+            storeEntitlement(
+                jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+                refreshToken = "card-refresh",
+                sku = "monthly_03",
+                provider = EntitlementProvider.STRIPE,
+                covered = false,
+            )
+
+            storeEntitlement(
+                jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+                refreshToken = "github-refresh",
+                sku = "annual_01",
+                provider = EntitlementProvider.GITHUB_SPONSOR,
+            )
+
+            assertTrue(hasPro.first())
+            assertEquals(EntitlementProvider.GITHUB_SPONSOR, provider.first())
+        }
+    }
+
+    @Test
     fun syncsWithoutProWhenNoEntitlementStored() = runBlocking {
         entitlement().apply {
             initialize()
@@ -148,6 +206,44 @@ class PurchaseEntitlementTest {
         }
         assertEquals(0, server.requestCount)
         verifyNoInteractions(syncAdapters)
+    }
+
+    @Test
+    fun restoreGrantsProFromUnexpiredEntitlementBeforeInitialize() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS))
+
+        entitlement().apply {
+            assertTrue(restore())
+            assertTrue(hasPro.value)
+        }
+        assertEquals(0, server.requestCount)
+        verifyNoInteractions(syncAdapters)
+    }
+
+    @Test
+    fun restoreNeverCallsTheServerPastGrace() = runBlocking {
+        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS))
+
+        entitlement().apply {
+            assertFalse(restore())
+            assertFalse(hasPro.value)
+        }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun initializeRefreshesWhatRestoreLeftPastGrace() = runBlocking {
+        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS))
+        server.enqueue(refreshResponse(jwt(exp = now() + 30 * DAY_SECONDS)))
+
+        entitlement().apply {
+            restore()
+            initialize()
+
+            assertTrue(awaitReady())
+            assertTrue(hasPro.first())
+        }
+        assertEquals("stored-token", refreshTokenSent())
     }
 
     @Test
@@ -272,21 +368,24 @@ class PurchaseEntitlementTest {
     }
 
     @Test
-    fun deletesEntitlementWhenSubscriptionRevoked() = runBlocking {
-        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS))
+    fun keepsTheReceiptWhenTheSubscriptionStopsCovering() = runBlocking {
+        val stored = jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS)
+        storeOnDisk(stored)
         server.enqueue(MockResponse().setResponseCode(402))
 
         val entitlement = entitlement()
         entitlement.initialize()
 
         assertTrue(entitlement.awaitReady())
-        assertNull(entitlement.getJwt())
-        assertFalse(entitlementFile.exists())
+        assertFalse(entitlement.hasPro.first())
+        assertEquals(stored, entitlement.getJwt())
+        assertTrue(entitlementFile.exists())
+        assertEquals("stored-token", readFromDisk().refreshToken)
     }
 
     @Test
-    fun clearsSubscriptionDetailsWhenRevoked() = runBlocking {
-        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS))
+    fun saysWhatTheLapsedSubscriptionWas() = runBlocking {
+        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS), EntitlementProvider.STRIPE)
         server.enqueue(MockResponse().setResponseCode(402))
 
         val entitlement = entitlement()
@@ -294,9 +393,27 @@ class PurchaseEntitlementTest {
         entitlement.awaitReady()
 
         assertFalse(entitlement.hasPro.first())
-        assertNull(entitlement.sku.first())
-        assertNull(entitlement.formattedPrice.first())
-        assertNull(entitlement.provider.first())
+        assertEquals("annual", entitlement.sku.first())
+        assertEquals(EntitlementProvider.STRIPE, entitlement.provider.first())
+    }
+
+    @Test
+    fun aResubscribeAnywhereElseUnlocksThisDeviceWithoutBeingAsked() = runBlocking {
+        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS))
+        server.enqueue(MockResponse().setResponseCode(402))
+        val renewed = jwt(exp = now() + 30 * DAY_SECONDS)
+        server.enqueue(refreshResponse(renewed))
+
+        val entitlement = entitlement(
+            lapsedRetryIntervalSeconds = 1,
+            httpClientFactory = freshClientFactory,
+        )
+        entitlement.initialize()
+        entitlement.awaitReady()
+
+        assertFalse(entitlement.hasPro.first())
+        withTimeout(10_000) { entitlement.hasPro.first { it } }
+        assertEquals(renewed, entitlement.getJwt())
     }
 
     @Test
@@ -376,7 +493,7 @@ class PurchaseEntitlementTest {
             provider = EntitlementProvider.PLAY,
         )
 
-        assertTrue(granted)
+        assertEquals(StoreResult.STORED, granted)
         verify(syncAdapters).sync(SyncSource.PURCHASE_COMPLETED)
     }
 
@@ -395,8 +512,8 @@ class PurchaseEntitlementTest {
             provider = EntitlementProvider.PLAY,
         )
 
-        assertTrue(granted)
-        assertTrue(renewed)
+        assertEquals(StoreResult.STORED, granted)
+        assertEquals(StoreResult.STORED, renewed)
         assertEquals("rotated-token", readFromDisk().refreshToken)
         verify(syncAdapters, times(1)).sync(SyncSource.PURCHASE_COMPLETED)
     }
@@ -409,8 +526,23 @@ class PurchaseEntitlementTest {
             provider = EntitlementProvider.PLAY,
         )
 
-        assertFalse(granted)
+        assertEquals(StoreResult.REJECTED, granted)
         assertFalse(entitlementFile.exists())
+        verifyNoInteractions(syncAdapters)
+    }
+
+    @Test
+    fun keepsAReceiptWithNoExpiryWithoutUnlocking() = runBlocking {
+        val entitlement = entitlement()
+
+        val granted = entitlement.storeEntitlement(
+            jwt = signedJwt("""{"iss":"tasks.org"}"""),
+            refreshToken = "stored-token",
+            provider = EntitlementProvider.STRIPE,
+        )
+
+        assertEquals(StoreResult.STORED, granted)
+        assertFalse(entitlement.hasPro.first())
         verifyNoInteractions(syncAdapters)
     }
 
@@ -474,7 +606,7 @@ class PurchaseEntitlementTest {
             provider = EntitlementProvider.PLAY,
         )
 
-        assertTrue(granted)
+        assertEquals(StoreResult.STORED, granted)
         assertTrue(entitlement.awaitReady())
         assertTrue(entitlement.hasPro.first())
         assertEquals(linked, entitlement.getJwt())
@@ -482,7 +614,7 @@ class PurchaseEntitlementTest {
     }
 
     @Test
-    fun grantsProWhenEntitlementCannotBePersisted() = runBlocking {
+    fun refusesProWhenEntitlementCannotBeWritten() = runBlocking {
         val blocked = File(dir, "blocked").apply { writeText("not a directory") }
 
         val entitlement = entitlement(dataDir = blocked)
@@ -492,8 +624,41 @@ class PurchaseEntitlementTest {
             provider = EntitlementProvider.PLAY,
         )
 
-        assertFalse(granted)
-        assertTrue(entitlement.hasPro.first())
+        assertEquals(StoreResult.WRITE_FAILED, granted)
+        assertFalse(entitlement.hasPro.first())
+        verifyNoInteractions(syncAdapters)
+    }
+
+    @Test
+    fun namesTheKeychainWhenAReceiptCannotBeEncrypted() = runBlocking {
+        keyProvider.locked = true
+
+        val entitlement = entitlement()
+        val granted = entitlement.storeEntitlement(
+            jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+            refreshToken = "stored-token",
+            provider = EntitlementProvider.PLAY,
+        )
+
+        assertEquals(StoreResult.ENCRYPT_FAILED, granted)
+        assertFalse(entitlement.hasPro.first())
+        assertFalse(entitlementFile.exists())
+    }
+
+    @Test
+    fun keepsTheTermsTheReceiptCameWith() = runBlocking {
+        val entitlement = entitlement()
+        val terms = PurchaseTerms(status = "trialing", trialEnd = 1793481600000L)
+
+        entitlement.storeEntitlement(
+            jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+            refreshToken = "stored-token",
+            provider = EntitlementProvider.STRIPE,
+            terms = terms,
+        )
+
+        assertEquals(terms, entitlement.terms.first())
+        assertEquals(terms, readFromDisk().terms)
     }
 
     @Test
@@ -533,6 +698,87 @@ class PurchaseEntitlementTest {
     }
 
     @Test
+    fun aDesktopLinkedFromACardSubscriptionLearnsWhoSoldIt() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS), EntitlementProvider.PLAY)
+        server.enqueue(
+            checkResponse(
+                sku = "annual_30",
+                formattedPrice = "USD 29.99",
+                status = "active",
+                creditCents = 900,
+                creditCurrency = "EUR",
+                provider = "stripe",
+            )
+        )
+
+        val entitlement = entitlement()
+        entitlement.initialize()
+        entitlement.awaitReady()
+        entitlement.checkTier()
+
+        assertEquals(EntitlementProvider.STRIPE, entitlement.provider.first())
+        assertEquals(EntitlementProvider.STRIPE, readFromDisk().provider)
+        assertEquals(900, entitlement.terms.first()?.creditCents)
+    }
+
+    @Test
+    fun anArmThisVersionDoesNotKnowIsNotTakenForStripe() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS), EntitlementProvider.PLAY)
+        server.enqueue(
+            checkResponse(
+                sku = "annual_30",
+                formattedPrice = "USD 29.99",
+                provider = "apple",
+            )
+        )
+
+        val entitlement = entitlement()
+        entitlement.initialize()
+        entitlement.awaitReady()
+        entitlement.checkTier()
+
+        assertEquals(EntitlementProvider.PLAY, entitlement.provider.first())
+        assertNull(entitlement.terms.first())
+    }
+
+    @Test
+    fun aReceiptWithNoCredentialKeepsTheRefreshTokenAlreadyStored() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS))
+        val entitlement = entitlement()
+        entitlement.initialize()
+        entitlement.awaitReady()
+        val minted = jwt(exp = now() + 60 * DAY_SECONDS)
+
+        assertEquals(
+            StoreResult.STORED,
+            entitlement.storeEntitlement(
+                jwt = minted,
+                refreshToken = null,
+                sku = "annual_30",
+                provider = EntitlementProvider.STRIPE,
+            )
+        )
+
+        assertEquals(minted, entitlement.getJwt())
+        assertEquals("stored-token", readFromDisk().refreshToken)
+    }
+
+    @Test
+    fun aReceiptWithNoCredentialAndNothingStoredIsRefused() = runBlocking {
+        val entitlement = entitlement()
+        entitlement.initialize()
+
+        assertEquals(
+            StoreResult.REJECTED,
+            entitlement.storeEntitlement(
+                jwt = jwt(exp = now() + 30 * DAY_SECONDS),
+                refreshToken = null,
+                provider = EntitlementProvider.STRIPE,
+            )
+        )
+    }
+
+    @Test
     fun aCheckSpendsNoCredentialAndLooksLikeNoPurchase() = runBlocking {
         val stored = jwt(exp = now() + 30 * DAY_SECONDS)
         storeOnDisk(stored, EntitlementProvider.STRIPE)
@@ -555,6 +801,55 @@ class PurchaseEntitlementTest {
         server.enqueue(checkResponse("annual", "USD 10.00"))
 
         assertFalse(entitlement().checkTier())
+    }
+
+    @Test
+    fun aCheckThatFindsALiveSubscriptionUnlocksALockedDevice() = runBlocking {
+        val lapsed = lockedOnALapsedSubscription()
+        val renewed = jwt(exp = now() + 30 * DAY_SECONDS)
+        server.enqueue(checkResponse("annual_30", "USD 29.99", status = "active"))
+        server.enqueue(refreshResponse(renewed, sku = "annual_30", formattedPrice = "USD 29.99"))
+
+        assertTrue(lapsed.checkTier())
+
+        assertTrue(lapsed.hasPro.first())
+        assertEquals(renewed, lapsed.getJwt())
+        assertEquals("annual_30", lapsed.sku.first())
+        verify(syncAdapters).sync(SyncSource.PURCHASE_COMPLETED)
+    }
+
+    @Test
+    fun aCheckThatFindsTheSubscriptionStillGoneLeavesTheDeviceLocked() = runBlocking {
+        val lapsed = lockedOnALapsedSubscription()
+        val held = lapsed.getJwt()
+        server.enqueue(checkResponse("annual_30", "USD 29.99", status = "canceled"))
+        server.enqueue(MockResponse().setResponseCode(402))
+
+        lapsed.checkTier()
+
+        assertFalse(lapsed.hasPro.first())
+        assertEquals(held, lapsed.getJwt())
+    }
+
+    @Test
+    fun aLockedDeviceWithNoNewsToReadSpendsNoRefreshToken() = runBlocking {
+        val lapsed = lockedOnALapsedSubscription()
+        server.enqueue(checkResponse("annual", "USD 10.00"))
+
+        assertFalse(lapsed.checkTier())
+
+        assertFalse(lapsed.hasPro.first())
+        assertEquals(2, server.requestCount)
+    }
+
+    private suspend fun lockedOnALapsedSubscription(): PurchaseEntitlement {
+        storeOnDisk(jwt(exp = now() - GRACE_SECONDS - DAY_SECONDS), EntitlementProvider.STRIPE)
+        server.enqueue(MockResponse().setResponseCode(402))
+        val entitlement = entitlement(httpClientFactory = freshClientFactory)
+        entitlement.initialize()
+        entitlement.awaitReady()
+        assertFalse(entitlement.hasPro.first())
+        return entitlement
     }
 
     @Test
@@ -698,23 +993,65 @@ class PurchaseEntitlementTest {
         assertEquals(0, server.requestCount)
     }
 
+    @Test
+    fun theStoredPriceIsTheStoredSubscriptionsPrice() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS))
+        val entitlement = entitlement()
+        entitlement.initialize()
+        assertTrue(entitlement.awaitReady())
+
+        val provider = EntitlementSubscriptionProvider(entitlement)
+
+        assertEquals("USD 10.00", provider.getFormattedPrice("annual"))
+    }
+
+    @Test
+    fun theStoredPriceIsNotQuotedForAnotherSku() = runBlocking {
+        storeOnDisk(jwt(exp = now() + 30 * DAY_SECONDS))
+        val entitlement = entitlement()
+        entitlement.initialize()
+        assertTrue(entitlement.awaitReady())
+
+        val provider = EntitlementSubscriptionProvider(entitlement)
+
+        assertNull(provider.getFormattedPrice("monthly_03"))
+    }
+
+    @Test
+    fun nothingIsPricedWithoutAnEntitlement() = runBlocking {
+        val provider = EntitlementSubscriptionProvider(entitlement())
+
+        assertNull(provider.getFormattedPrice("annual"))
+    }
+
+    private val freshClientFactory = OkHttpKtorClientFactory(object : OkHttpClientFactory {
+        override suspend fun newClient(
+            foreground: Boolean,
+            cookieKey: String?,
+            block: (OkHttpClient.Builder) -> Unit,
+        ) = OkHttpClient.Builder().apply(block).build()
+    })
+
     private fun entitlement(
         refreshCallTimeoutMillis: Long = 20_000L,
         readyTimeoutMillis: Long = 30_000L,
         dataDir: File = dir,
+        lapsedRetryIntervalSeconds: Long = 24 * 60 * 60L,
+        httpClientFactory: KtorClientFactory = clientFactory,
     ) = PurchaseEntitlement(
         dataDir = dataDir.path,
         encryption = encryption,
-        httpClientFactory = clientFactory,
+        httpClientFactory = httpClientFactory,
         serverEnvironment = mock<TasksServerEnvironment> {
             on { caldavUrl } doReturn server.url("/").toString().trimEnd('/')
         },
         scope = scope,
         json = json,
-        syncAdapters = syncAdapters,
+        syncAdapters = { syncAdapters },
         publicKeyBase64 = Base64.getEncoder().encodeToString(keyPair.public.encoded),
         refreshCallTimeoutMillis = refreshCallTimeoutMillis,
         readyTimeoutMillis = readyTimeoutMillis,
+        lapsedRetryIntervalSeconds = lapsedRetryIntervalSeconds,
     )
 
     private fun now() = System.currentTimeMillis() / 1000
@@ -736,12 +1073,16 @@ class PurchaseEntitlementTest {
         entitlementFile.writeText(encryption.encrypt(plain)!!)
     }
 
-    private fun refreshResponse(jwt: String) = MockResponse()
+    private fun refreshResponse(
+        jwt: String,
+        sku: String = "annual",
+        formattedPrice: String = "USD 10.00",
+    ) = MockResponse()
         .setResponseCode(200)
         .setHeader("Content-Type", "application/json")
         .setBody(
-            """{"jwt":"$jwt","refresh_token":"rotated-token","sku":"annual",""" +
-                """"formatted_price":"USD 10.00"}"""
+            """{"jwt":"$jwt","refresh_token":"rotated-token","sku":"$sku",""" +
+                """"formatted_price":"$formattedPrice"}"""
         )
 
     private fun checkResponse(
@@ -751,8 +1092,10 @@ class PurchaseEntitlementTest {
         trialEnd: Long? = null,
         creditCents: Int? = null,
         creditCurrency: String? = null,
+        provider: String? = null,
     ): MockResponse {
         val fields = buildList {
+            provider?.let { add(""""provider":"$it"""") }
             add(""""sku":"$sku"""")
             add(""""formatted_price":"$formattedPrice"""")
             status?.let { add(""""status":"$it"""") }

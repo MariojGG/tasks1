@@ -18,10 +18,26 @@ data class TasksAccountResponse(
     @SerialName("credit_cents") val creditCents: Int? = null,
     @SerialName("credit_currency") val creditCurrency: String? = null,
 ) {
+    sealed interface StripeRow {
+        val provider: String?
+        val product: String?
+        val status: String?
+        val expires: Long?
+        val cancelAtPeriodEnd: Boolean
+        val trialEnd: Long?
+    }
+
+    val stripeCloudRow: SubscriptionSource?
+        get() = subscriptions.firstOrNull { it.provider == PROVIDER_STRIPE }
+
+    val stripeSupporterRow: SupporterSource?
+        get() = supporter.firstOrNull { it.provider == PROVIDER_STRIPE }
+
+    val stripeRow: StripeRow?
+        get() = stripeCloudRow ?: stripeSupporterRow
+
     val hasStripeSubscription: Boolean
-        get() = subscriptions.any { it.provider == PROVIDER_STRIPE } ||
-            supporter.any { it.provider == PROVIDER_STRIPE } ||
-            subscription?.provider == PROVIDER_STRIPE
+        get() = stripeRow != null || subscription?.provider == PROVIDER_STRIPE
 
     val hasAnySubscription: Boolean
         get() = subscriptions.isNotEmpty() || supporter.isNotEmpty() || subscription?.free == false
@@ -29,30 +45,40 @@ data class TasksAccountResponse(
     val hasCloudSubscription: Boolean
         get() = subscriptions.isNotEmpty()
 
+    val hasForeignCloudSubscription: Boolean
+        get() = subscriptions.any { it.provider != PROVIDER_STRIPE }
+
+    val foreignCloudProvider: String?
+        get() = subscriptions.firstOrNull { it.provider != PROVIDER_STRIPE }?.provider
+
     val stripeProduct: String?
-        get() = subscriptions.firstOrNull { it.provider == PROVIDER_STRIPE }?.product
-            ?: supporter.firstOrNull { it.provider == PROVIDER_STRIPE }?.product
+        get() = stripeRow?.product
+
+    val stripeCovered: Boolean?
+        get() = if (stripeCloudRow != null) true else stripeSupporterRow?.covered
 
     @Serializable
     data class SubscriptionSource(
-        val provider: String? = null,
-        val expires: Long? = null,
+        override val provider: String? = null,
+        override val expires: Long? = null,
         val isActive: Boolean = false,
-        @SerialName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
-        @SerialName("trial_end") val trialEnd: Long? = null,
-        val product: String? = null,
-    )
+        override val status: String? = null,
+        @SerialName("cancel_at_period_end") override val cancelAtPeriodEnd: Boolean = false,
+        @SerialName("trial_end") override val trialEnd: Long? = null,
+        override val product: String? = null,
+    ) : StripeRow
 
     @Serializable
     data class SupporterSource(
-        val provider: String? = null,
-        val product: String? = null,
+        override val provider: String? = null,
+        override val product: String? = null,
         @SerialName("formatted_price") val formattedPrice: String? = null,
-        val status: String? = null,
-        val expires: Long? = null,
-        @SerialName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
-        @SerialName("trial_end") val trialEnd: Long? = null,
-    )
+        override val status: String? = null,
+        override val expires: Long? = null,
+        @SerialName("cancel_at_period_end") override val cancelAtPeriodEnd: Boolean = false,
+        @SerialName("trial_end") override val trialEnd: Long? = null,
+        val covered: Boolean? = null,
+    ) : StripeRow
 
     @Serializable
     data class Subscription(
@@ -83,5 +109,7 @@ data class TasksAccountResponse(
 
     companion object {
         const val PROVIDER_STRIPE = "stripe"
+        const val PROVIDER_PLAY = "play"
+        const val PROVIDER_GITHUB_SPONSOR = "github_sponsor"
     }
 }

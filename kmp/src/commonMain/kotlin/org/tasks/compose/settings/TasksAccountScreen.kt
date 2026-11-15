@@ -1,5 +1,7 @@
 package org.tasks.compose.settings
 
+import org.tasks.billing.ModifySubscription
+import org.tasks.billing.modifySubscription
 import org.tasks.compose.components.SymbolIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -89,9 +91,7 @@ import tasks.kmp.generated.resources.upgrade
 import tasks.kmp.generated.resources.url
 import tasks.kmp.generated.resources.user
 import tasks.kmp.generated.resources.view_tos
-import org.tasks.TasksUrls
 import tasks.kmp.generated.resources.wrong_account
-import tasks.kmp.generated.resources.wrong_account_message
 import tasks.kmp.generated.resources.your_subscription_expired
 import org.tasks.caldav.TasksAccountResponse
 import org.tasks.caldav.TasksAccountResponse.Guest
@@ -104,6 +104,7 @@ import org.tasks.viewmodel.TasksAccountState
 import org.tasks.kmp.org.tasks.time.DateStyle
 import org.tasks.kmp.org.tasks.time.DateFormatter
 import org.tasks.themes.TasksIcons
+import org.tasks.compose.components.iconOr
 
 data class CalendarItem(
     val name: String,
@@ -254,7 +255,7 @@ fun TasksAccountScreen(
                                     modifier = Modifier
                                         .padding(start = SettingsContentPadding)
                                         .size(SettingsIconSize),
-                                    label = shared.icon ?: TasksIcons.LIST,
+                                    label = shared.icon.iconOr(TasksIcons.LIST),
                                     tint = when (shared.color) {
                                         0 -> MaterialTheme.colorScheme.onSurface
                                         else -> Color(shared.color)
@@ -547,14 +548,20 @@ fun TasksAccountScreen(
         ) {
             ManageSubscriptionSheetContent(
                 onUpgrade = {},
-                onModify = {
+                onChangePlan = {
                     showManageSheet = false
                     onModifySubscription()
+                },
+                onOpenSponsorPage = {
+                    showManageSheet = false
+                    onOpenSponsor()
                 },
                 onCancel = {
                     showManageSheet = false
                     onCancelSubscription()
                 },
+                modifyAction = state.subscriptionProvider
+                    .modifySubscription(unattributed = ModifySubscription.CHANGE_PLAN),
                 showUpgrade = false,
                 modifier = Modifier.navigationBarsPadding(),
             )
@@ -584,11 +591,7 @@ private fun ErrorBannerCard(
     when {
         account.error.isPurchaseTokenInUse() -> {
             title = stringResource(Res.string.wrong_account)
-            summary = stringResource(
-                Res.string.wrong_account_message,
-                account.error.purchaseTokenInUseAccount() ?: "",
-                TasksUrls.SUPPORT_EMAIL,
-            )
+            summary = conflictingAccountMessage(account.error.purchaseTokenInUseAccount())
             onClick = onSignIn
         }
         account.isPaymentRequired() -> {

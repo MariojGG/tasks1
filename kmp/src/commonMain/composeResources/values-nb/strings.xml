@@ -128,10 +128,6 @@
     <string name="discard_changes">Forkast endringer?</string>
     <string name="discard">Forkast</string>
     <string name="delete">Slett</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d liste</item>
-        <item quantity="other">%1$d lister</item>
-    </plurals>
     <string name="caldav_server_other">Annet</string>
     <string name="caldav_server_type">Tjenertype</string>
     <string name="caldav_server_unknown">Ukjent</string>
@@ -143,7 +139,6 @@
     <string name="url_invalid_scheme">Må begynne med http(s)://</string>
     <string name="url_required">Nettadresse kreves</string>
     <string name="username_required">Brukernavn kreves</string>
-    <string name="etesync_account_description">Krever en konto hos EteSync.com eller selvdrevet tjener</string>
     <string name="show_advanced_settings">Vis avanserte innstillinger</string>
     <string name="whats_new">Hva er nytt</string>
     <string name="version_string">Versjon %1$s</string>
@@ -436,4 +431,6 @@
     <string name="mcp_tools_group_reminders">Påminnelser</string>
     <string name="mcp_copy">Kopier</string>
     <string name="new_filter">Opprett nytt filter</string>
+    <string name="upgrade_blurb_1">Hei, jeg heter Alex. Jeg er den uavhengige utvikleren bak Tasks.org</string>
+    <string name="upgrade_blurb_2">Jeg har brukt tusenvis av timer på å jobbe med Tasks.org, og jeg offentliggjør all kildekoden på nettet gratis. For å støtte mitt arbeid krever noen funksjoner et abonnement</string>
 </resources>

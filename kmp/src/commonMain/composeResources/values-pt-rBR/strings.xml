@@ -139,11 +139,6 @@
     <string name="discard_changes">Descartar alterações?</string>
     <string name="discard">Descartar</string>
     <string name="delete">Excluir</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d lista</item>
-        <item quantity="many">%1$d listas</item>
-        <item quantity="other">%1$d listas</item>
-    </plurals>
     <string name="caldav_server_other">Outro</string>
     <string name="caldav_server_type">Tipo de servidor</string>
     <string name="caldav_server_unknown">Desconhecido</string>
@@ -155,7 +150,6 @@
     <string name="url_invalid_scheme">Deve iniciar com http(s)://</string>
     <string name="url_required">É necessário o URL</string>
     <string name="username_required">Nome de usuário necessário</string>
-    <string name="etesync_account_description">Precisa de uma conta com EteSync.com ou uma instância desse serviço auto-hospedada</string>
     <string name="wear_phone_update_required">Atualização do celular necessária</string>
     <string name="wear_connecting_to_phone">Conectando ao celular…</string>
     <string name="failed_to_save_task">Erro ao salvar tarefa</string>
@@ -197,17 +191,14 @@
     <string name="debug">Debug</string>
     <string name="link_desktop">Conectar app de desktop</string>
     <string name="link_desktop_description">Desbloquear o app de desktop com sua inscrição Google Play</string>
-    <string name="link_desktop_instructions">Abrir o app Tasks.org de desktop a ir para Adicionar conta para ver o QR code. Então clique no botão abaixo para escanear.</string>
     <string name="scan_qr_code">Escanear QR code</string>
     <string name="link_desktop_success">Desktop conectado com sucesso!</string>
-    <string name="link_desktop_error">Erro ao conectar desktop. Por favor tente de novo.</string>
     <string name="done">Pronto</string>
     <string name="retry">Tentar de novo</string>
     <string name="qr_code">QR code</string>
     <string name="error_create_link_failed">Erro ao criar conexão. Verifique sua conexão com a internet e tente novamente.</string>
     <string name="error_confirmation_failed">Erro ao confirmar conexão. O código pode ser inválido ou expirado.</string>
     <string name="error_network">Erro ao conectar. Verifique sua conexão com a internet.</string>
-    <string name="already_subscribed">Já tem inscrição?</string>
     <string name="sign_in_subtitle">Já tem inscrição ou é um convidado?</string>
     <string name="show_advanced_settings">Mostrar configurações avançadas</string>
     <string name="app_settings">Configurações do aplicativo</string>
@@ -295,12 +286,10 @@
     <string name="delete_tag_warning">Tarefas com essa tag não serão excluídas</string>
     <string name="delete_list_warning">Todas tarefas nessa lista serão excluídas. Isso não pode ser desfeito!</string>
     <string name="error_contact_support">Se você continuar tendo problemas, entre em contato com %1$s</string>
-    <string name="sponsor_on_github">Apoiar no GitHub</string>
     <string name="unlock_pro_opening_browser">Abrindo navegador…</string>
     <string name="google_play_subscription">Inscrição Google Play</string>
     <string name="github_sponsorship">Patrocínio do GitHub</string>
     <string name="error_github_verification_failed">Verificação falhou. Tente de novo.</string>
-    <string name="pricing_subtitle">Grátis e de código aberto. Inscrições apoiam o desenvolvimento e desbloqueiam recursos adicionais.</string>
     <string name="pricing_cloud_description">Desbloqueia todos recursos do app and conecta a sincronização Tasks.org Cloud</string>
     <string name="pricing_from">De %1$s</string>
     <string name="pricing_nyp_description">Escolha seu preço de inscrição. Desbloqueia todos recursos do app.</string>
@@ -309,10 +298,8 @@
     <string name="monthly">Mensal</string>
     <string name="restore_purchases">Restaurar compras</string>
     <string name="pricing_cloud_monthly_note">Cobrado mensalmente</string>
-    <string name="pricing_cloud_feature_1">Sincronização instantânea entre Android e desktop</string>
     <string name="pricing_cloud_feature_2">Compartilhamento de listas com Amigos &amp; Família</string>
     <string name="pricing_cloud_feature_3">Email-para-tarefa com caixa de entrada privada</string>
-    <string name="pricing_cloud_feature_4">Conectar com Apple Lembretes no iOS</string>
     <string name="pricing_nyp_feature_1">Temas e ícones personalizados</string>
     <string name="pricing_nyp_feature_2">Sincronização auto hospedada com CalDAV e EteSync</string>
     <string name="pricing_nyp_feature_3">Apoiar software de código aberto</string>
@@ -321,7 +308,6 @@
     <string name="create_a_list">Criar uma lista</string>
     <string name="google_tasks_permission_not_granted">Permissão do Google Tasks não foi concedida. Faça login de novo e permita acesso ao Google Tasks.</string>
     <string name="cloud_onboarding_welcome_title">Bem vindo ao Tasks.org Cloud</string>
-    <string name="cloud_onboarding_welcome_body">Faça login com Google para criar sua conta Tasks.org Cloud</string>
     <string name="cloud_onboarding_not_now">Agora não</string>
     <string name="cloud_onboarding_faq_title">Perguntas frequentes</string>
     <string name="cloud_onboarding_create_list_title">Vamos começar</string>
@@ -641,7 +627,6 @@
     <string name="works_with_tasks">Funciona com Tasks.org</string>
     <string name="works_with_tasks_description">Aplicativos, dispositivos sincronizados e integrações</string>
     <string name="sign_in_with_apple">Logar com Apple</string>
-    <string name="mcp_server_summary">Deixe os assistentes de IA neste computador lerem e gerenciarem seus dados</string>
     <string name="mcp_server_enable">Enviar seus dados sobre MCP</string>
     <string name="mcp_server_enable_summary">Roda apenas neste computador, em 127.0.0.1. Nada é exposto à rede.</string>
     <string name="mcp_status_running">Rodando na porta %1$d</string>
@@ -709,4 +694,6 @@
     <string name="works_with_submit_pull_request">Enviar um pull request</string>
     <string name="new_place">Criar novo local</string>
     <string name="subscription_required">Inscrição necessária</string>
+    <string name="upgrade_blurb_1">Olá! Meu nome é Alex e eu sou o desenvolvedor independente por trás do Tasks.org</string>
+    <string name="upgrade_blurb_2">Eu investi centenas de horas trabalhando no Tasks.org, e eu publico todo o código-fonte online de graça. Para apoiar meu trabalho, algumas funcionalidades precisam de um plano de assinatura</string>
 </resources>

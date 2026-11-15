@@ -41,6 +41,107 @@ class TasksAccountResponseTest {
     }
 
     @Test
+    fun aCloudSubscriptionCarriesStripesOwnStatus() {
+        val response = parse(
+            """{"subscriptions":[{"provider":"stripe","expires":1793481600000,""" +
+                """"isActive":true,"status":"past_due","product":"monthly_03"}]}"""
+        )
+
+        assertEquals("past_due", response.subscriptions.single().status)
+    }
+
+    @Test
+    fun aCloudRowIsOnlyListedWhileItCovers() {
+        val response = parse(
+            """{"subscriptions":[{"provider":"stripe","isActive":true,"product":"monthly_03"}]}"""
+        )
+
+        assertEquals(true, response.stripeCovered)
+    }
+
+    @Test
+    fun aSupporterRowSaysWhetherItStillCovers() {
+        val response = parse(
+            """{"supporter":[{"provider":"stripe","product":"annual_25","status":"canceled",""" +
+                """"cloud":false,"covered":false,"expires":1735000000000}]}"""
+        )
+
+        assertEquals(false, response.stripeCovered)
+    }
+
+    @Test
+    fun aServerThatSaysNothingAboutCoverLeavesItUnknown() {
+        val response = parse(
+            """{"supporter":[{"provider":"stripe","product":"annual_25","status":"active"}]}"""
+        )
+
+        assertNull(response.stripeCovered)
+    }
+
+    @Test
+    fun anAccountWithNoStripeRowHasNothingToCover() {
+        assertNull(parse("{}").stripeCovered)
+    }
+
+    @Test
+    fun aSupporterRowSaysWhetherItIsStillCovered() {
+        val response = parse(
+            """{"supporter":[{"provider":"stripe","product":"annual_25","status":"canceled",""" +
+                """"cloud":false,"covered":true,"expires":1793481600000}]}"""
+        )
+
+        assertEquals(true, response.stripeCovered)
+    }
+
+    @Test
+    fun aListedCloudRowIsCoveredByDefinition() {
+        val response = parse(
+            """{"subscriptions":[{"provider":"stripe","isActive":true,"product":"monthly_03"}]}"""
+        )
+
+        assertEquals(true, response.stripeCovered)
+    }
+
+    @Test
+    fun aServerThatSaysNothingAboutCoverageLeavesItUnknown() {
+        val response = parse(
+            """{"supporter":[{"provider":"stripe","product":"annual_25","status":"active"}]}"""
+        )
+
+        assertNull(response.stripeCovered)
+    }
+
+    @Test
+    fun syncPaidForByAnotherProviderIsNotACardSubscriptionToSellOver() {
+        val response = parse(
+            """{"subscriptions":[{"provider":"play","isActive":true,"product":"annual_30"}]}"""
+        )
+
+        assertTrue(response.hasForeignCloudSubscription)
+        assertFalse(response.hasStripeSubscription)
+        assertEquals("play", response.foreignCloudProvider)
+    }
+
+    @Test
+    fun aCloudRowWithNoProviderIsStillNotACardSubscriptionToSellOver() {
+        val response = parse(
+            """{"subscriptions":[{"isActive":true,"product":"annual_30"}]}"""
+        )
+
+        assertTrue(response.hasForeignCloudSubscription)
+        assertNull(response.foreignCloudProvider)
+    }
+
+    @Test
+    fun aCardSubscriptionOfTheirOwnIsTheirsToReprice() {
+        val response = parse(
+            """{"subscriptions":[{"provider":"stripe","isActive":true,"product":"annual_30"}]}"""
+        )
+
+        assertFalse(response.hasForeignCloudSubscription)
+    }
+
+    @Test
     fun creditBelongsToTheCustomerRatherThanToASubscription() {
         val response = parse(
             """{"subscriptions":[{"provider":"stripe","isActive":true,"product":"annual_01"}],""" +

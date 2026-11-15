@@ -66,6 +66,7 @@ kotlin {
                     exclude(group = "org.json", module = "json")
                     exclude(group = "org.codehaus.groovy", module = "groovy")
                     exclude(group = "org.codehaus.groovy", module = "groovy-dateutil")
+                    exclude(group = "org.slf4j", module = "slf4j-jdk14")
                 }
                 implementation(libs.persistent.cookiejar)
                 implementation(libs.pebblekit)
@@ -75,14 +76,14 @@ kotlin {
                 implementation(libs.dmfs.rfc5545.datetime)
                 implementation(libs.dmfs.recur)
                 implementation(libs.dmfs.jems)
-                api(libs.etebase)
+                api(libs.etebase.android)
             }
         }
         jvmMain {
             dependsOn(jvmCommonMain)
             dependencies {
                 implementation(libs.xpp3)
-                implementation(files("../libs/client-jvm-2.3.2.jar"))
+                implementation(libs.etebase.jvm)
             }
         }
         commonTest.dependencies {
@@ -113,8 +114,9 @@ kotlin {
             api(libs.google.api.tasks)
             api(libs.okhttp)
             implementation(libs.ktor.client.okhttp)
+            compileOnly(libs.slf4j.api)
             compileOnly(libs.xpp3)
-            compileOnly(files("../libs/client-jvm-2.3.2.jar"))
+            compileOnly(libs.etebase.jvm)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -18,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.jsonPrimitive
 import org.tasks.analytics.AnalyticsEvents
 import org.tasks.analytics.Reporting
+import org.tasks.billing.EntitlementProvider
 import org.tasks.billing.SubscriptionProvider
 import org.tasks.caldav.CaldavClientFactory
 import org.tasks.caldav.TasksAccountDataRepository
@@ -36,12 +38,13 @@ import org.tasks.sync.SyncSource
 
 data class TasksAccountState(
     val account: CaldavAccount? = null,
+    val loaded: Boolean = false,
     val isGithub: Boolean = false,
     val isApple: Boolean = false,
     val isGuest: Boolean = false,
     val hasSubscription: Boolean = false,
     val isTasksSubscription: Boolean = false,
-    val isCardSubscription: Boolean = false,
+    val subscriptionProvider: EntitlementProvider? = null,
     val showTosDialog: Boolean = false,
     val inboundEmail: String? = null,
     val inboundCalendarName: String? = null,
@@ -85,6 +88,8 @@ open class TasksAccountViewModel(
         accountDataRepository.accountResponseFlow
             .stateIn(viewModelScope, SharingStarted.Eagerly, initialResponse)
 
+    private val accountLoaded = MutableStateFlow(false)
+
     private val account: StateFlow<CaldavAccount?> = accountUuid
         .filterNotNull()
         .flatMapLatest { uuid ->
@@ -92,6 +97,7 @@ open class TasksAccountViewModel(
                 accounts.firstOrNull { it.uuid == uuid }
             }
         }
+        .onEach { accountLoaded.value = true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val allCalendars = caldavDao.subscribeToCalendars()
@@ -112,6 +118,7 @@ open class TasksAccountViewModel(
         inboundCalendarUri,
         _newPassword,
         _tosDismissed,
+        accountLoaded,
     ) { values ->
         val account = values[0] as CaldavAccount?
         val response = values[1] as TasksAccountResponse?
@@ -121,17 +128,19 @@ open class TasksAccountViewModel(
         val inboundUri = values[4] as String?
         val newPassword = values[5] as NewPassword?
         val tosDismissed = values[6] as Boolean
+        val loaded = values[7] as Boolean
 
         TasksAccountState(
             account = account,
+            loaded = loaded,
             isGithub = account?.username?.startsWith("github") == true,
             isApple = account?.username?.startsWith("apple") == true,
             isGuest = response?.guest ?: false,
             hasSubscription = subscription != null || response?.hasAnySubscription == true,
             isTasksSubscription = subscription?.isTasksSubscription == true ||
                 response?.hasCloudSubscription == true,
-            isCardSubscription = subscription?.isCardSubscription == true ||
-                response?.hasStripeSubscription == true,
+            subscriptionProvider = subscription?.provider
+                ?: EntitlementProvider.STRIPE.takeIf { response?.hasStripeSubscription == true },
             showTosDialog = !tosDismissed && account?.isTosRequired() == true,
             inboundEmail = response?.inboundEmail?.email?.takeIf(String::isNotEmpty),
             inboundCalendarName = calendars
@@ -246,6 +255,16 @@ open class TasksAccountViewModel(
             )
         } catch (e: Exception) {
             Logger.e(e) { "Failed to regenerate inbound email" }
+        }
+    }
+
+    suspend fun logout() {
+        val uuid = accountUuid.value ?: return
+        val account = account.value ?: caldavDao.getAccountByUuid(uuid)
+        if (account == null) {
+            accountDataRepository.clear()
+        } else {
+            logout(account)
         }
     }
 

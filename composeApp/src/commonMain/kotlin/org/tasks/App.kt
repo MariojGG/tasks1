@@ -121,6 +121,7 @@ import co.touchlab.kermit.Logger
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -135,15 +136,23 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.getKoin
 import org.koin.compose.koinInject
 import org.tasks.data.SubtaskTreeRegistry
 import org.tasks.data.deletions
 import org.koin.compose.viewmodel.koinViewModel
 import org.tasks.analytics.AnalyticsEvents
 import org.tasks.analytics.Reporting
+import org.tasks.analytics.rememberPaywallAnalytics
 import org.tasks.auth.OAuthProvider
 import org.tasks.auth.TasksServerEnvironment
 import org.tasks.billing.BillingProvider
+import org.tasks.billing.DesktopLinkClient
+import org.tasks.billing.GitHubSponsorClient
+import org.tasks.billing.EntitlementProvider
+import org.tasks.billing.modifySubscription
+import org.tasks.billing.restoreSources
+import org.tasks.billing.StoreBillingProvider
 import org.tasks.billing.StripePurchases
 import org.tasks.billing.SubscriptionProvider
 import org.tasks.billing.SubscriptionSkus
@@ -160,6 +169,7 @@ import org.tasks.compose.WelcomeScreenLayout
 import org.tasks.compose.accounts.AddAccountScreen
 import org.tasks.compose.accounts.AddAccountViewModel
 import org.tasks.compose.accounts.Platform
+import org.tasks.compose.accounts.requiresPro
 import org.tasks.compose.chips.ChipDataProvider
 import org.tasks.compose.tasklist.RowState
 import org.tasks.compose.tasklist.TaskList
@@ -176,11 +186,19 @@ import org.tasks.compose.platformStatusBarInsets
 import org.tasks.compose.pricing.PricingMode
 import org.tasks.compose.SubscriptionOnboardingScreen
 import org.tasks.compose.pricing.PricingScreen
+import org.tasks.compose.pricing.SOURCE_MANAGE_SUBSCRIPTION
+import org.tasks.compose.pricing.SupporterFeatures
+import org.tasks.compose.pricing.leadsWithSupporter
 import org.tasks.compose.pricing.cardCheckout
 import org.tasks.compose.pricing.cardPortalLauncher
+import org.tasks.compose.pricing.rememberPaywallSatisfied
 import org.tasks.compose.settings.CaldavAccountSettingsDetail
+import org.tasks.compose.accounts.AddAccountViewModel.SignInState.Error as SignInError
+import org.tasks.compose.settings.conflictingAccountMessage
 import org.tasks.compose.settings.CaldavAccountSettingsPane
+import org.tasks.compose.settings.DesktopLinkCallbacks
 import org.tasks.compose.settings.RestorePurchasesScreen
+import org.tasks.compose.settings.StripeRestoreCallbacks
 import org.tasks.compose.settings.EtebaseAccountSettingsDetail
 import org.tasks.compose.settings.EtebaseAccountSettingsPane
 import org.tasks.compose.settings.GoogleTasksAccountSettingsDetail
@@ -284,6 +302,7 @@ import tasks.kmp.generated.resources.ok
 import tasks.kmp.generated.resources.resize_panes
 import tasks.kmp.generated.resources.settings
 import tasks.kmp.generated.resources.subscription_not_found
+import tasks.kmp.generated.resources.upgrade_subscription_banner
 import tasks.kmp.generated.resources.url_google_play
 import tasks.kmp.generated.resources.url_sponsor
 import tasks.kmp.generated.resources.wrong_account
@@ -327,8 +346,16 @@ fun App(
             val hasAccount by appViewModel.hasAccount.collectAsState()
             val subscriptionProvider = koinInject<SubscriptionProvider>()
             val stripePurchases = koinInject<StripePurchases>()
+            val koin = getKoin()
+            val storeBillingProvider = remember(koin) { koin.getOrNull<StoreBillingProvider>() }
             val subscriptionInfo by subscriptionProvider.subscription.collectAsState(initial = null)
             var cloudSignInSource by rememberSaveable { mutableStateOf<String?>(null) }
+            var cloudSignInProvider by rememberSaveable { mutableStateOf<SignInProvider?>(null) }
+            val signInProviders = if (configuration.appStore == AppStore.APP_STORE) {
+                APP_STORE_SIGN_IN_PROVIDERS
+            } else {
+                DEFAULT_SIGN_IN_PROVIDERS
+            }
             var platformSignIn by rememberSaveable { mutableStateOf<String?>(null) }
             var wasInOnboarding by rememberSaveable { mutableStateOf(false) }
             var wasInCloudOnboarding by rememberSaveable { mutableStateOf(false) }
@@ -523,11 +550,17 @@ fun App(
                 paneExpansionState.setFirstPaneWidth(with(density) { listPaneWidth.roundToPx() })
             }
             val windowAdaptiveInfo = currentWindowAdaptiveInfoV2()
-            val paneDirective = remember(windowAdaptiveInfo, twoPaneLayout) {
+            val windowPaneDirective = remember(windowAdaptiveInfo, twoPaneLayout) {
                 val directive = calculatePaneScaffoldDirective(windowAdaptiveInfo)
                     .copy(horizontalPartitionSpacerSize = PanelGutterWidth)
                 if (twoPaneLayout) directive else directive.copy(maxHorizontalPartitions = 1)
             }
+            val paneDirective = rememberHeldPaneDirective(
+                directive = windowPaneDirective,
+                showing = backStack.lastOrNull().let {
+                    it is TaskListDestination || it is TaskEditDestination
+                },
+            )
             val listDetailStrategy = rememberListDetailSceneStrategy<NavKey>(
                 directive = paneDirective,
                 paneExpansionState = paneExpansionState,
@@ -858,14 +891,9 @@ fun App(
                                     AnalyticsEvents.PARAM_SOURCE to "onboarding",
                                     AnalyticsEvents.PARAM_SELECTION to platform.name,
                                 )
-                                if (configuration.thirdPartySyncRequiresPro && !addAccountViewModel.hasPro) {
-                                    when (platform) {
-                                        Platform.CALDAV, Platform.ETEBASE, Platform.GOOGLE_TASKS, Platform.MICROSOFT -> {
-                                            backStack.push(PricingDestination(mode = PricingMode.NYP_ONLY, source = platform.name))
-                                            return@AddAccountScreen
-                                        }
-                                        else -> {}
-                                    }
+                                if (platform.requiresPro(configuration) && !addAccountViewModel.hasPro) {
+                                    backStack.push(PricingDestination(mode = PricingMode.NYP_ONLY, source = platform.name))
+                                    return@AddAccountScreen
                                 }
                                 when (platform) {
                                     Platform.TASKS_ORG -> if (
@@ -936,7 +964,9 @@ fun App(
                                 viewModel = viewModel,
                                 drawerViewModel = drawerViewModel,
                                 onSettingsClick = { backStack.push(SettingsDestination) },
-                                onSubscribe = { backStack.push(PricingDestination()) },
+                                onSubscribe = { source ->
+                                    backStack.push(PricingDestination(source = source))
+                                },
                                 onAddAccount = { backStack.push(AddAccountDestination) },
                                 onTaskClick = { destination -> openTaskFromList(destination) },
                                 onCreateTask = onCreateTask,
@@ -970,7 +1000,9 @@ fun App(
                                 // cannot reach it even if that ordering ever changes.
                                 backHandlerEnabled = !materialDrawerState.isOpen,
                                 onAddAccount = { backStack.push(AddAccountDestination) },
-                                onSubscribe = { backStack.push(PricingDestination()) },
+                                onSubscribe = { source ->
+                                    backStack.push(PricingDestination(source = source))
+                                },
                                 onListsChanged = { drawerViewModel?.updateFilters() },
                                 onClose = { closeDetail() },
                             )
@@ -998,7 +1030,9 @@ fun App(
                                         .e { "Link desktop clicked without pro subscription" }
                                 }
                             },
-                            onUpgradeClick = { backStack.push(PricingDestination()) },
+                            onUpgradeClick = { source ->
+                                backStack.push(PricingDestination(source = source))
+                            },
                             onMigrateToCloud = {
                                 backStack.push(
                                     PricingDestination(
@@ -1013,8 +1047,7 @@ fun App(
                             onSubscribedClick = { showManageSheet = true },
                         )
                         if (showManageSheet) {
-                            val isGitHubSponsor = subscriptionInfo?.isGitHubSponsor == true
-                            val isCardSubscription = subscriptionInfo?.isCardSubscription == true
+                            val provider = subscriptionInfo?.provider
                             val sponsorUrl = stringResource(Res.string.url_sponsor)
                             val googlePlayUrl = TasksUrls.GOOGLE_PLAY_SUBSCRIPTIONS
                             ModalBottomSheet(
@@ -1026,19 +1059,27 @@ fun App(
                                         showManageSheet = false
                                         backStack.push(PricingDestination(mode = PricingMode.CLOUD_ONLY, source = "subscribed"))
                                     },
-                                    onModify = {
+                                    onChangePlan = {
+                                        showManageSheet = false
+                                        backStack.push(
+                                            PricingDestination(
+                                                source = SOURCE_MANAGE_SUBSCRIPTION,
+                                            )
+                                        )
+                                    },
+                                    onOpenSponsorPage = {
                                         showManageSheet = false
                                         openUrl(sponsorUrl)
                                     },
                                     onCancel = {
                                         showManageSheet = false
-                                        when {
-                                            isCardSubscription -> openCardPortal()
-                                            isGitHubSponsor -> openUrl(sponsorUrl)
-                                            else -> openUrl(googlePlayUrl)
+                                        when (provider) {
+                                            EntitlementProvider.STRIPE -> openCardPortal()
+                                            EntitlementProvider.GITHUB_SPONSOR -> openUrl(sponsorUrl)
+                                            EntitlementProvider.PLAY, null -> openUrl(googlePlayUrl)
                                         }
                                     },
-                                    showModify = isGitHubSponsor,
+                                    modifyAction = provider.modifySubscription(),
                                 )
                             }
                         }
@@ -1053,11 +1094,12 @@ fun App(
                         )
                     }
                     entry<RestorePurchasesDestination> { destination ->
-                        val desktopLinkClient = koinInject<org.tasks.billing.DesktopLinkClient>()
-                        val gitHubSponsorClient = koinInject<org.tasks.billing.GitHubSponsorClient>()
-                        LaunchedEffect(Unit) {
-                            reporting.logEvent(AnalyticsEvents.SCREEN_RESTORE_PURCHASES)
+                        val desktopLinkClient = if (configuration.supportsPlayLinkRestore) {
+                            koinInject<DesktopLinkClient>()
+                        } else {
+                            null
                         }
+                        val gitHubSponsorClient = koinInject<GitHubSponsorClient>()
                         val successButtonText = when (destination.source) {
                             Platform.CALDAV.name -> stringResource(Res.string.add_platform_account, stringResource(Res.string.caldav))
                             Platform.ETEBASE.name -> stringResource(Res.string.add_platform_account, stringResource(Res.string.etesync))
@@ -1066,58 +1108,46 @@ fun App(
                         }
                         RestorePurchasesScreen(
                             onBack = { backStack.removeLastOrNull() },
-                            onCreateLink = { desktopLinkClient.createLink() },
-                            onPollStatus = { code -> desktopLinkClient.pollStatus(code) },
-                            onLinkSuccess = { jwt, refreshToken, sku, formattedPrice ->
-                                desktopLinkClient
-                                    .onLinkSuccess(jwt, refreshToken, sku, formattedPrice)
-                                    .also { stored ->
-                                        if (stored) {
-                                            reporting.logEvent(
-                                                AnalyticsEvents.RESTORE_SUCCESS,
-                                                AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GOOGLE_PLAY,
+                            sources = remember(configuration) { restoreSources(configuration) },
+                            stripe = StripeRestoreCallbacks(
+                                onRequestCode = { email ->
+                                    stripePurchases.requestRestoreCode(email)
+                                },
+                                onVerifyCode = { email, code ->
+                                    stripePurchases.verifyRestoreCode(email, code)
+                                },
+                                onRestored = { purchase, covered, terms ->
+                                    stripePurchases.restore(
+                                        purchase = purchase,
+                                        covered = covered,
+                                        terms = terms,
+                                        requireCloud = destination.forCloud,
+                                    )
+                                },
+                                onUpgrade = {
+                                    if (backStack.getOrNull(backStack.lastIndex - 1) is PricingDestination) {
+                                        backStack.removeLastOrNull()
+                                    } else {
+                                        backStack.push(
+                                            PricingDestination(
+                                                mode = PricingMode.CLOUD_ONLY,
+                                                source = "restore_upgrade",
                                             )
-                                        }
+                                        )
                                     }
+                                },
+                            ),
+                            desktopLink = desktopLinkClient?.let { client ->
+                                DesktopLinkCallbacks(
+                                    onCreateLink = { client.createLink() },
+                                    onPollStatus = { code -> client.pollStatus(code) },
+                                    onLinkSuccess = { jwt, refreshToken, sku, formattedPrice ->
+                                        client.onLinkSuccess(jwt, refreshToken, sku, formattedPrice)
+                                    },
+                                )
                             },
                             onGitHubSignIn = { gitHubSponsorClient.signIn() },
-                            onOpenSponsorPage = {
-                                reporting.logEvent(AnalyticsEvents.RESTORE_SPONSOR_CLICK)
-                                openUrl("https://github.com/sponsors/abaker")
-                            },
-                            onGooglePlaySelected = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.RESTORE_SELECTION,
-                                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GOOGLE_PLAY,
-                                )
-                            },
-                            onGitHubSelected = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.RESTORE_SELECTION,
-                                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GITHUB,
-                                )
-                            },
-                            onNotSponsor = {
-                                reporting.logEvent(AnalyticsEvents.RESTORE_NOT_SPONSOR)
-                            },
-                            onLinkError = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.RESTORE_ERROR,
-                                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GOOGLE_PLAY,
-                                )
-                            },
-                            onGitHubSuccess = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.RESTORE_SUCCESS,
-                                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GITHUB,
-                                )
-                            },
-                            onGitHubFailed = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.RESTORE_ERROR,
-                                    AnalyticsEvents.PARAM_SELECTION to AnalyticsEvents.SELECTION_GITHUB,
-                                )
-                            },
+                            analytics = reporting,
                             successButtonText = successButtonText,
                         )
                     }
@@ -1132,8 +1162,10 @@ fun App(
                             SubscriptionOnboardingScreen(
                                 step = currentStep,
                                 showConfetti = true,
-                                onSignIn = {
+                                providers = signInProviders,
+                                onSignIn = { provider ->
                                     onboardingViewModel.onSignInClicked()
+                                    cloudSignInProvider = provider
                                     cloudSignInSource = AnalyticsEvents.SOURCE_ONBOARDING
                                 },
                                 onCreateList = {
@@ -1169,100 +1201,98 @@ fun App(
                         // stack and the entry's own saved state survive.
                         var showSignInDialog by rememberSaveable { mutableStateOf(false) }
                         val addAccountViewModel = koinViewModel<AddAccountViewModel>()
+                        val hasTasksAccount by remember(chromeCaldavDao) {
+                            chromeCaldavDao.watchAccounts().map { accounts -> accounts.any { it.isTasksOrg } }
+                        }.collectAsState(initial = addAccountViewModel.hasTasksAccount)
                         val signInState by addAccountViewModel.signInState.collectAsState()
                         // Signing in and the account landing are published by two independent
                         // queries on the same invalidation, so the onboarding redirect above can
                         // replace the whole stack before these collectors run. This entry is still
                         // composed for that frame, and popping blind from here empties the stack -
                         // which NavDisplay treats as fatal.
-                        fun popPricing(): Boolean =
-                            if (backStack.lastOrNull() is PricingDestination) {
+                        val paywallAnalytics = rememberPaywallAnalytics(
+                            analytics = reporting,
+                            source = destination.source,
+                            mode = destination.mode,
+                            provider = configuration.billingProvider,
+                        )
+                        fun popPricing(): Boolean {
+                            paywallAnalytics.completed()
+                            return if (backStack.lastOrNull() is PricingDestination) {
                                 backStack.removeLastOrNull()
                                 true
                             } else {
                                 false
                             }
+                        }
                         LaunchedEffect(Unit) {
-                            reporting.logEvent(
-                                AnalyticsEvents.SCREEN_PRICING,
-                                AnalyticsEvents.PARAM_SOURCE to destination.source,
-                                AnalyticsEvents.PARAM_TYPE to destination.mode.name,
-                            )
                             addAccountViewModel.accountAdded.collect {
                                 popPricing()
                             }
                         }
-                        if (destination.mode == PricingMode.NYP_ONLY) {
-                            LaunchedEffect(subscriptionInfo) {
-                                if (subscriptionInfo != null && popPricing()) {
-                                    when (val next = afterPaywall(destination.source)) {
-                                        is AfterPaywall.Open -> backStack.push(next.destination)
-                                        is AfterPaywall.SignIn ->
-                                            platformSignIn = next.platform.name
-                                        AfterPaywall.None -> {}
-                                    }
-                                }
+                        val satisfied = rememberPaywallSatisfied(
+                            mode = destination.mode,
+                            subscription = subscriptionProvider.subscription,
+                        )
+                        val openRestore = {
+                            backStack.push(
+                                RestorePurchasesDestination(
+                                    source = destination.source,
+                                    forCloud = destination.mode == PricingMode.CLOUD_ONLY,
+                                )
+                            )
+                        }
+                        LaunchedEffect(satisfied, backStack.lastOrNull()) {
+                            if (!satisfied || !popPricing()) {
+                                return@LaunchedEffect
                             }
-                        } else {
-                            var arrivedPaying by rememberSaveable { mutableStateOf<Boolean?>(null) }
-                            LaunchedEffect(Unit) {
-                                subscriptionProvider.subscription
-                                    .distinctUntilChanged()
-                                    .collect { info ->
-                                        val has = info != null
-                                        if (arrivedPaying == null) {
-                                            arrivedPaying = has
-                                        } else if (arrivedPaying == false && has) {
-                                            popPricing()
-                                        }
-                                    }
+                            if (destination.mode == PricingMode.NYP_ONLY) {
+                                when (val next = afterPaywall(destination.source)) {
+                                    is AfterPaywall.Open -> backStack.push(next.destination)
+                                    is AfterPaywall.SignIn -> platformSignIn = next.platform.name
+                                    AfterPaywall.None -> {}
+                                }
                             }
                         }
                         val googlePlayUrl = stringResource(Res.string.url_google_play)
-                        val store = if (configuration.billingProvider == BillingProvider.STRIPE) {
-                            cardCheckout(
-                                suggestedPrice = subscriptionInfo
-                                    ?.let { SubscriptionSkus.subscriptionPrice(it.sku) },
+                        val suggestedPrice = subscriptionInfo
+                            ?.let { SubscriptionSkus.supporterPrice(it.sku) }
+                        val store = when (configuration.billingProvider) {
+                            BillingProvider.STRIPE -> cardCheckout(
+                                viewModel = koinViewModel(),
+                                suggestedPrice = suggestedPrice,
                                 openUrl = openUrl,
+                                onRestorePurchases = openRestore,
+                                onPlanChanged = { popPricing() },
+                                portalUrl = { stripePurchases.portalUrl() },
+                                browserCoversApp = configuration.isAndroid,
                             )
-                        } else {
-                            null
+                            BillingProvider.GOOGLE_PLAY ->
+                                storeBillingProvider?.storeBilling(suggestedPrice) { popPricing() }
+                            null -> null
                         }
                         PricingScreen(
                             mode = destination.mode,
                             onBack = { backStack.removeLastOrNull() },
-                            onSignIn = {
-                                reporting.logEvent(AnalyticsEvents.PRICING_SIGN_IN_CLICK)
-                                showSignInDialog = true
+                            onSignIn = { showSignInDialog = true },
+                            onRestorePurchases = openRestore,
+                            onCloudSubscribeClick = { if (store == null) openUrl(googlePlayUrl) },
+                            onNypSubscribeClick = { if (store == null) openUrl(googlePlayUrl) },
+                            supporterFeatures = when {
+                                configuration.billingProvider != BillingProvider.STRIPE -> SupporterFeatures.APP_STORE
+                                configuration.isAndroid -> SupporterFeatures.ANDROID_CARD
+                                else -> SupporterFeatures.DESKTOP
                             },
-                            onRestorePurchases = { backStack.push(RestorePurchasesDestination(source = destination.source)) },
-                            onCloudSubscribeClick = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.PRICING_SUBSCRIBE_CLICK,
-                                    AnalyticsEvents.PARAM_TIER to AnalyticsEvents.TIER_CLOUD,
-                                )
-                                if (store == null) openUrl(googlePlayUrl)
-                            },
-                            onNypSubscribeClick = {
-                                reporting.logEvent(
-                                    AnalyticsEvents.PRICING_SUBSCRIBE_CLICK,
-                                    AnalyticsEvents.PARAM_TIER to AnalyticsEvents.TIER_NYP,
-                                )
-                                if (store == null) openUrl(googlePlayUrl)
-                            },
-                            onBillingToggle = { isAnnual ->
-                                reporting.logEvent(
-                                    AnalyticsEvents.PRICING_BILLING_TOGGLE,
-                                    AnalyticsEvents.PARAM_PERIOD to if (isAnnual) AnalyticsEvents.PERIOD_ANNUAL else AnalyticsEvents.PERIOD_MONTHLY,
-                                )
-                            },
-                            showSupporterBanner = destination.mode != PricingMode.NYP_ONLY && subscriptionInfo?.isTasksSubscription == false,
+                            supporterFirst = leadsWithSupporter(destination.source),
+                            subscribedSku = subscriptionInfo?.sku,
+                            showSignIn = !hasTasksAccount,
                             store = store,
+                            analytics = paywallAnalytics,
                         )
                         if (showSignInDialog) {
                             BasicAlertDialog(onDismissRequest = { showSignInDialog = false }) {
                                 SignInProviderDialog(
-                                    providers = if (configuration.appStore == AppStore.APP_STORE) APP_STORE_SIGN_IN_PROVIDERS else DEFAULT_SIGN_IN_PROVIDERS,
+                                    providers = signInProviders,
                                     onSelected = { provider ->
                                         showSignInDialog = false
                                         val oauthProvider = when (provider) {
@@ -1317,7 +1347,9 @@ fun App(
                         }
                     }
                 },
-                onSubscribe = { backStack.push(PricingDestination()) },
+                onSubscribe = { source ->
+                    backStack.push(PricingDestination(source = source))
+                },
                 onAddAccount = { backStack.push(AddAccountDestination) },
             )
 
@@ -1333,32 +1365,36 @@ fun App(
                 LaunchedEffect(Unit) {
                     addAccountViewModel.accountAdded.collect { cloudSignInSource = null }
                 }
-                BasicAlertDialog(onDismissRequest = { cloudSignInSource = null }) {
-                    SignInProviderDialog(
-                        providers = if (configuration.appStore == AppStore.APP_STORE) {
-                            APP_STORE_SIGN_IN_PROVIDERS
-                        } else {
-                            DEFAULT_SIGN_IN_PROVIDERS
-                        },
-                        onSelected = { provider ->
-                            val oauthProvider = when (provider) {
-                                SignInProvider.GOOGLE -> OAuthProvider.GOOGLE
-                                SignInProvider.GITHUB -> OAuthProvider.GITHUB
-                                SignInProvider.APPLE -> OAuthProvider.APPLE
-                            }
-                            reporting.logEvent(
-                                AnalyticsEvents.SIGN_IN_PROVIDER_SELECTED,
-                                AnalyticsEvents.PARAM_PROVIDER to oauthProvider.name,
-                            )
-                            addAccountViewModel.signIn(
-                                platform = Platform.TASKS_ORG,
-                                provider = oauthProvider,
-                                openUrl = openUrl,
-                            )
-                        },
-                        onHelp = { openUrl("https://tasks.org/docs/sync") },
-                        onCancel = { cloudSignInSource = null },
+                val signInWith: (SignInProvider) -> Unit = { provider ->
+                    val oauthProvider = when (provider) {
+                        SignInProvider.GOOGLE -> OAuthProvider.GOOGLE
+                        SignInProvider.GITHUB -> OAuthProvider.GITHUB
+                        SignInProvider.APPLE -> OAuthProvider.APPLE
+                    }
+                    reporting.logEvent(
+                        AnalyticsEvents.SIGN_IN_PROVIDER_SELECTED,
+                        AnalyticsEvents.PARAM_PROVIDER to oauthProvider.name,
                     )
+                    addAccountViewModel.signIn(
+                        platform = Platform.TASKS_ORG,
+                        provider = oauthProvider,
+                        openUrl = openUrl,
+                    )
+                }
+                LaunchedEffect(cloudSignInProvider) {
+                    val provider = cloudSignInProvider ?: return@LaunchedEffect
+                    cloudSignInProvider = null
+                    signInWith(provider)
+                }
+                if (source != AnalyticsEvents.SOURCE_ONBOARDING) {
+                    BasicAlertDialog(onDismissRequest = { cloudSignInSource = null }) {
+                        SignInProviderDialog(
+                            providers = signInProviders,
+                            onSelected = signInWith,
+                            onHelp = { openUrl("https://tasks.org/docs/sync") },
+                            onCancel = { cloudSignInSource = null },
+                        )
+                    }
                 }
                 SignInErrorDialog(
                     signInState = signInState,
@@ -1389,9 +1425,9 @@ fun App(
                             taskListViewModel?.setFilter(TagFilter(tag))
                         }
                     },
-                    onSubscribe = {
+                    onSubscribe = { source ->
                         showNewTag = false
-                        backStack.push(PricingDestination())
+                        backStack.push(PricingDestination(source = source))
                     },
                 )
             }
@@ -1439,11 +1475,11 @@ private fun SignInErrorDialog(
     reporting: Reporting,
     onPaymentRequired: () -> Unit,
 ) {
-    val errorState = signInState as? AddAccountViewModel.SignInState.Error ?: return
+    val errorState = signInState as? SignInError ?: return
     LaunchedEffect(errorState) {
         reporting.logEvent(
             AnalyticsEvents.SIGN_IN_ERROR,
-            AnalyticsEvents.PARAM_MESSAGE to errorState.message,
+            AnalyticsEvents.PARAM_MESSAGE to errorState.report,
         )
     }
     BasicAlertDialog(onDismissRequest = onDismiss) {
@@ -1458,13 +1494,16 @@ private fun SignInErrorDialog(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = if (errorState.isPaymentRequired) {
-                        stringResource(
+                    text = when (errorState) {
+                        is SignInError.AccountInUse ->
+                            conflictingAccountMessage(errorState.existingAccount)
+                        SignInError.UpgradeRequired ->
+                            stringResource(Res.string.upgrade_subscription_banner)
+                        SignInError.PaymentRequired -> stringResource(
                             Res.string.subscription_not_found,
                             TasksUrls.SUPPORT_EMAIL,
                         )
-                    } else {
-                        errorState.message
+                        is SignInError.Failed -> errorState.message
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1473,8 +1512,11 @@ private fun SignInErrorDialog(
                 TextButton(
                     onClick = {
                         onDismiss()
-                        if (errorState.isPaymentRequired) {
-                            onPaymentRequired()
+                        when (errorState) {
+                            SignInError.PaymentRequired,
+                            SignInError.UpgradeRequired -> onPaymentRequired()
+                            is SignInError.AccountInUse,
+                            is SignInError.Failed -> Unit
                         }
                     },
                     modifier = Modifier.align(Alignment.End).padding(top = 8.dp),
@@ -1748,7 +1790,7 @@ private fun TaskListScreen(
     viewModel: TaskListViewModel,
     drawerViewModel: DrawerViewModel,
     onSettingsClick: () -> Unit,
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     onAddAccount: () -> Unit,
     onTaskClick: (TaskEditDestination) -> Unit,
     onCreateTask: () -> Unit,
@@ -1862,7 +1904,7 @@ private fun TaskEditEntry(
     filterPickerViewModel: FilterPickerViewModel,
     backHandlerEnabled: Boolean,
     onAddAccount: () -> Unit,
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     onListsChanged: () -> Unit,
     filterTint: Int = 0,
     onOpenSubtask: (taskId: Long, remoteId: String, isDraft: Boolean) -> Unit,
@@ -1907,7 +1949,7 @@ internal fun NewListDialogHost(
     accountId: Long?,
     isDark: Boolean,
     onDismiss: (CaldavFilter?) -> Unit,
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     onAddAccount: () -> Unit,
 ) {
     accountId ?: return
@@ -1930,9 +1972,9 @@ internal fun NewListDialogHost(
             // Both of these navigate away. The dialog has to come down first: it draws over the
             // whole window, and at the App call site it isn't inside NavDisplay at all, so it
             // would sit on top of the screen it just navigated to.
-            onSubscribe = {
+            onSubscribe = { source ->
                 onDismiss(null)
-                onSubscribe()
+                onSubscribe(source)
             },
             onAddAccount = {
                 onDismiss(null)
@@ -2294,7 +2336,7 @@ private fun ListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     onAddAccount: () -> Unit = {},
     viewModelKey: String = "list_settings_${account.id}_${calendar.uuid}",
 ) {
@@ -2356,7 +2398,7 @@ private fun CaldavListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     viewModelKey: String,
 ) {
     val viewModel = koinViewModel<CaldavCalendarSettingsViewModel>(
@@ -2387,9 +2429,9 @@ private fun CaldavListSettingsDialog(
             },
             onColorWheelSelected = {
                 viewModel.closeColorPicker()
-                onSubscribe()
+                onSubscribe(AnalyticsEvents.SOURCE_COLORS)
             },
-            onSubscribe = { onSubscribe() },
+            onSubscribe = onSubscribe,
         )
     }
 }
@@ -2402,7 +2444,7 @@ private fun LocalListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     onAddAccount: () -> Unit = {},
     viewModelKey: String,
 ) {
@@ -2440,9 +2482,9 @@ private fun LocalListSettingsDialog(
             },
             onColorWheelSelected = {
                 viewModel.closeColorPicker()
-                onSubscribe()
+                onSubscribe(AnalyticsEvents.SOURCE_COLORS)
             },
-            onSubscribe = { onSubscribe() },
+            onSubscribe = onSubscribe,
             headerContent = {
                 AnimatedBanner(
                     visible = showBanner,
@@ -2469,7 +2511,7 @@ private fun GoogleTaskListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     viewModelKey: String,
 ) {
     val viewModel = koinViewModel<GoogleTaskListSettingsViewModel>(
@@ -2487,7 +2529,7 @@ private fun MicrosoftListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     viewModelKey: String,
 ) {
     val viewModel = koinViewModel<MicrosoftListSettingsViewModel>(
@@ -2503,7 +2545,7 @@ private fun CaldavListSettingsDialog(
     viewModel: ListSettingsViewModel,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit,
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -2534,9 +2576,9 @@ private fun CaldavListSettingsDialog(
             },
             onColorWheelSelected = {
                 viewModel.closeColorPicker()
-                onSubscribe()
+                onSubscribe(AnalyticsEvents.SOURCE_COLORS)
             },
-            onSubscribe = { onSubscribe() },
+            onSubscribe = onSubscribe,
         )
     }
 }
@@ -2549,7 +2591,7 @@ private fun EtebaseListSettingsDialog(
     isDark: Boolean,
     onDismiss: (CaldavCalendar?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     viewModelKey: String,
 ) {
     val viewModel = koinViewModel<EtebaseCalendarSettingsViewModel>(
@@ -2580,9 +2622,9 @@ private fun EtebaseListSettingsDialog(
             },
             onColorWheelSelected = {
                 viewModel.closeColorPicker()
-                onSubscribe()
+                onSubscribe(AnalyticsEvents.SOURCE_COLORS)
             },
-            onSubscribe = { onSubscribe() },
+            onSubscribe = onSubscribe,
         )
     }
 }
@@ -2594,7 +2636,7 @@ private fun TagSettingsDialog(
     isDark: Boolean,
     onDismiss: (TagData?) -> Unit,
     onDeleted: () -> Unit = {},
-    onSubscribe: () -> Unit,
+    onSubscribe: (String) -> Unit,
     viewModelKey: String = "tag_settings_${tagData.remoteId}",
 ) {
     val viewModel = koinViewModel<TagSettingsViewModel>(
@@ -2625,10 +2667,10 @@ private fun TagSettingsDialog(
             },
             onDelete = { viewModel.delete { onDeleted() } },
             onNavigateBack = dismiss,
-            onSubscribe = { onSubscribe() },
+            onSubscribe = onSubscribe,
             onColorWheelSelected = {
                 viewModel.closeColorPicker()
-                onSubscribe()
+                onSubscribe(AnalyticsEvents.SOURCE_COLORS)
             },
         )
     }
@@ -2838,15 +2880,14 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onAddAccountClick: () -> Unit,
     onLinkDesktopClick: () -> Unit = {},
-    onUpgradeClick: () -> Unit,
+    onUpgradeClick: (String) -> Unit,
     onMigrateToCloud: () -> Unit = {},
     onSignInClick: () -> Unit = {},
     onSubscribedClick: () -> Unit = {},
 ) {
     val viewModel = koinViewModel<MainSettingsViewModel>()
     val proCardViewModel = koinViewModel<ProCardViewModel>()
-    val accounts by proCardViewModel.filteredAccounts.collectAsState()
-    val proCardState by proCardViewModel.proCardState.collectAsState()
+    val settingsState by proCardViewModel.state.collectAsState()
     val environmentLabel by proCardViewModel.environmentLabel.collectAsState()
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val navigator = rememberListDetailPaneScaffoldNavigator<SettingsPane>()
@@ -2890,107 +2931,109 @@ private fun SettingsScreen(
                 ) {
                     val configuration = koinInject<PlatformConfiguration>()
                     val purchaseState = koinInject<org.tasks.billing.PurchaseState>()
-                    MainSettingsScreen(
-                        accounts = accounts,
-                        proCardState = proCardState,
-                        environmentLabel = environmentLabel,
-                        showBackupWarning = false,
-                        showWidgets = viewModel.supportsWidgets,
-                        showNotifications = configuration.supportsNotifications,
-                        showMcpServer = configuration.supportsMcpServer,
-                        isDebug = viewModel.isDebug,
-                        showDesktopLinking = configuration.supportsDesktopLinking
-                                && !purchaseState.hasTasksAccount,
-                        onLinkDesktopClick = onLinkDesktopClick,
-                        onAccountClick = { account ->
-                            when {
-                                account.isLocalList -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            LocalAccountSettingsPane(account),
-                                        )
+                    settingsState?.let { settings ->
+                        MainSettingsScreen(
+                            accounts = settings.accounts,
+                            proCardState = settings.proCard,
+                            environmentLabel = environmentLabel,
+                            showBackupWarning = false,
+                            showWidgets = viewModel.supportsWidgets,
+                            showNotifications = configuration.supportsNotifications,
+                            showMcpServer = configuration.supportsMcpServer,
+                            isDebug = viewModel.isDebug,
+                            showDesktopLinking = configuration.supportsDesktopLinking
+                                    && !purchaseState.hasTasksAccount,
+                            onLinkDesktopClick = onLinkDesktopClick,
+                            onAccountClick = { account ->
+                                when {
+                                    account.isLocalList -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                LocalAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    account.isCaldavAccount -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                CaldavAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    account.isEtebaseAccount -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                EtebaseAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    account.isGoogleTasks -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                GoogleTasksAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    account.isMicrosoft -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                MicrosoftAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    account.isOpenTasks -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                OpenTaskAccountSettingsPane(account.id),
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        Logger.w("App") { "Unhandled account click: ${account.accountType}" }
                                     }
                                 }
-                                account.isCaldavAccount -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            CaldavAccountSettingsPane(account),
-                                        )
+                            },
+                            onAddAccountClick = onAddAccountClick,
+                            onSettingsClick = { destination ->
+                                scope.launch {
+                                    navigator.navigateTo(
+                                        ListDetailPaneScaffoldRole.Detail,
+                                        destination,
+                                    )
+                                }
+                            },
+                            onProCardClick = {
+                                when (val card = settings.proCard) {
+                                    is ProCardState.TasksOrgAccount -> {
+                                        scope.launch {
+                                            navigator.navigateTo(
+                                                ListDetailPaneScaffoldRole.Detail,
+                                                TasksAccountSettingsPane(card.account.uuid!!),
+                                            )
+                                        }
+                                    }
+                                    is ProCardState.Upgrade -> {
+                                        onUpgradeClick(AnalyticsEvents.SOURCE_SETTINGS)
+                                    }
+                                    is ProCardState.Subscribed -> {
+                                        onSubscribedClick()
+                                    }
+                                    is ProCardState.SignIn -> {
+                                        onSignInClick()
+                                    }
+                                    is ProCardState.Donate -> {
+                                        onUpgradeClick(AnalyticsEvents.SOURCE_SETTINGS)
                                     }
                                 }
-                                account.isEtebaseAccount -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            EtebaseAccountSettingsPane(account),
-                                        )
-                                    }
-                                }
-                                account.isGoogleTasks -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            GoogleTasksAccountSettingsPane(account),
-                                        )
-                                    }
-                                }
-                                account.isMicrosoft -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            MicrosoftAccountSettingsPane(account),
-                                        )
-                                    }
-                                }
-                                account.isOpenTasks -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            OpenTaskAccountSettingsPane(account),
-                                        )
-                                    }
-                                }
-                                else -> {
-                                    Logger.w("App") { "Unhandled account click: ${account.accountType}" }
-                                }
-                            }
-                        },
-                        onAddAccountClick = onAddAccountClick,
-                        onSettingsClick = { destination ->
-                            scope.launch {
-                                navigator.navigateTo(
-                                    ListDetailPaneScaffoldRole.Detail,
-                                    destination,
-                                )
-                            }
-                        },
-                        onProCardClick = {
-                            when (val state = proCardState) {
-                                is ProCardState.TasksOrgAccount -> {
-                                    scope.launch {
-                                        navigator.navigateTo(
-                                            ListDetailPaneScaffoldRole.Detail,
-                                            TasksAccountSettingsPane(state.account),
-                                        )
-                                    }
-                                }
-                                is ProCardState.Upgrade -> {
-                                    onUpgradeClick()
-                                }
-                                is ProCardState.Subscribed -> {
-                                    onSubscribedClick()
-                                }
-                                is ProCardState.SignIn -> {
-                                    onSignInClick()
-                                }
-                                is ProCardState.Donate -> {
-                                    onUpgradeClick()
-                                }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -3036,7 +3079,7 @@ private fun SettingsScreen(
                             onNavigateBack = {
                                 scope.launch { navigator.navigateBack() }
                             },
-                            onSubscribe = onUpgradeClick,
+                            onSubscribe = { onUpgradeClick(AnalyticsEvents.SOURCE_THEMES) },
                         )
                     }
                     is org.tasks.compose.settings.SettingsDestination.NavigationDrawer -> {
@@ -3051,7 +3094,7 @@ private fun SettingsScreen(
                             onNavigateBack = {
                                 scope.launch { navigator.navigateBack() }
                             },
-                            onPricingClick = onUpgradeClick,
+                            onPricingClick = { onUpgradeClick("works_with") },
                             onMcpSettingsClick = {
                                 scope.launch {
                                     navigator.navigateTo(
@@ -3121,7 +3164,7 @@ private fun SettingsScreen(
                                 scope.launch { navigator.navigateBack() }
                             },
                             onAddAccountClick = onAddAccountClick,
-                            onModifySubscription = onUpgradeClick,
+                            onModifySubscription = { onUpgradeClick("account_settings") },
                         )
                     }
                     is CaldavAccountSettingsPane -> {

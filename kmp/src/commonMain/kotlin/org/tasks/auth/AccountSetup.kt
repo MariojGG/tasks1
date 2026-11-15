@@ -1,14 +1,27 @@
 package org.tasks.auth
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.tasks.caldav.CaldavClientFactory
+import org.tasks.caldav.PurchaseTokenInUseException
 import org.tasks.data.UUIDHelper
 import org.tasks.data.dao.CaldavDao
 import org.tasks.data.entity.CaldavAccount
 import org.tasks.security.Encryption
 
 fun interface PurchaseClaim {
-    suspend fun claimHeldPurchase(username: String, token: String)
+    suspend fun claimHeldPurchase(username: String, token: String): HeldPurchaseClaim
 }
+
+sealed interface HeldPurchaseClaim {
+    data object Claimed : HeldPurchaseClaim
+
+    data object NotClaimed : HeldPurchaseClaim
+
+    data class CoveringAnotherAccount(val existingAccount: String) : HeldPurchaseClaim
+}
+
+private val accountSetupLock = Mutex()
 
 suspend fun setupTasksAccount(
     oauthResult: OAuthResult,
@@ -18,7 +31,7 @@ suspend fun setupTasksAccount(
     encryption: Encryption,
     provider: CaldavClientFactory,
     purchaseClaim: PurchaseClaim? = null,
-): CaldavAccount {
+): CaldavAccount = accountSetupLock.withLock {
     val idToken = oauthResult.idToken
         ?: throw IllegalStateException("id_token required for tasks.org account setup")
     val sub = idToken.sub
@@ -26,13 +39,19 @@ suspend fun setupTasksAccount(
     val username = "${issuer}_$sub"
     val tokenString = oauthResult.accessToken
     val password = encryption.encrypt(tokenString)
-    return caldavDao.getAccount(CaldavAccount.TYPE_TASKS, username)
+    caldavDao.getAccount(CaldavAccount.TYPE_TASKS, username)
         ?.let {
             it.copy(error = null, password = password)
                 .also { updated -> caldavDao.update(updated) }
         }
         ?: run {
-            purchaseClaim?.claimHeldPurchase(username, tokenString)
+            when (val claim = purchaseClaim?.claimHeldPurchase(username, tokenString)) {
+                is HeldPurchaseClaim.CoveringAnotherAccount ->
+                    throw PurchaseTokenInUseException(claim.existingAccount)
+                HeldPurchaseClaim.Claimed,
+                HeldPurchaseClaim.NotClaimed,
+                null -> Unit
+            }
             val homeSet = provider
                 .forUrl(caldavUrl, username, tokenString)
                 .use { it.homeSet() }

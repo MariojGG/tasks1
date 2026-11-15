@@ -160,10 +160,6 @@
     <string name="discard_changes">Loobud muudatustest?</string>
     <string name="discard">Loobu</string>
     <string name="delete">Kustuta</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d loend</item>
-        <item quantity="other">%1$d loendit</item>
-    </plurals>
     <string name="failed_to_save_task">Ülesande salvestamine ei õnnestunud</string>
     <string name="show_more">Näita rohkem</string>
     <string name="show_less">Näita vähem</string>
@@ -187,8 +183,6 @@
     <string name="url_invalid_scheme">Peab algama kujul http(s)://</string>
     <string name="url_required">URL on nõutud</string>
     <string name="username_required">Kasutajanimi on nõutud</string>
-    <string name="etesync_account_description">Eeldab, et sul on olemas kasutajakonto EteSync.com teenusepakkuja serveris või sinu omas vastavas serveris</string>
-    <string name="already_subscribed">Kas juba oled tellija?</string>
     <string name="sign_in_subtitle">Kas oled juba tellija või kutsud külaline?</string>
     <string name="show_advanced_settings">Näita üksikasjalikke seadistusi</string>
     <string name="app_settings">Rakenduse seadistused</string>
@@ -264,13 +258,11 @@
     <string name="caldav_server_mailbox_org">Mailbox.org</string>
     <string name="link_desktop">Seo töölauarakendus</string>
     <string name="link_desktop_description">Ava töölauarakendus oma Google Play tellimusega</string>
-    <string name="link_desktop_instructions">Ava Tasks.org töölauarakendus ja suundu „Lisa kautajakonto“ menüüpunkti juurde ja näed QR-koodi. Seejärel klõpsa järgnevat nuppu selle skaneerimiseks.</string>
     <string name="link_desktop_step_1">Ava Tasks.org töölauarakendus</string>
     <string name="link_desktop_step_2">Klõpsa „%1$s“ ja vali „%2$s“</string>
     <string name="link_desktop_step_3">Vali „%1$s“</string>
     <string name="scan_qr_code">Skaneeri QR-koodi</string>
     <string name="link_desktop_success">Töölauarakenduse sidumine õnnestus!</string>
-    <string name="link_desktop_error">Töölauarakenduse sidumine ei õnnestunud. Palun proovi uuesti.</string>
     <string name="unlock_pro_scan_heading">Skaneeri QR-koodi Tasks.org-i Androidi rakenduses</string>
     <string name="unlock_pro_step_1">Ava Tasks.org oma telefonis</string>
     <string name="unlock_pro_step_2">Klõpsa „%1$s“ ja seejärel „%2$s“</string>
@@ -285,12 +277,10 @@
     <string name="error_sponsorship_delay">Uued toetused ei pruugi kohe olla nähtavad, palun proovi mõne minuti pärast uuesti.</string>
     <string name="subscription_not_found">Sinu Tasks.org-i pilveteenuse tellimust ei leidunud. Kui sa arvad, et see oli viga siis palun kirjuta %1$s aadressile</string>
     <string name="error_contact_support">Kui sul ikkagi on probleeme, siis palun kirjuta %1$s aadressile</string>
-    <string name="sponsor_on_github">Kasuta teenust GitHub Sponsors</string>
     <string name="unlock_pro_opening_browser">Avan veebibrauserit…</string>
     <string name="google_play_subscription">Google Play tellimus</string>
     <string name="github_sponsorship">Toetus teenuses GitHub Sponsors</string>
     <string name="error_github_verification_failed">Verifitseerimine ei õnnestunud. Proovi hiljem uuesti.</string>
-    <string name="pricing_subtitle">Vaba ja avatud lähtekoodiga. Rahaline toetuse abil aitad arendustööd edasi ja saad kasutada täiendavaid funktsionaalsusi.</string>
     <string name="pricing_cloud_description">Saad kasutada rakendusi kõiki funktsionaalsusi ja kasutada sünkroonimist Tasks.org-i pilveteenusega.</string>
     <string name="pricing_from">Alates %1$s</string>
     <string name="pricing_nyp_description">Vali oma tellimuse hind. Sellega muutuvad rakenduse kõik funktsionaalsused kasutatavaks.</string>
@@ -299,17 +289,14 @@
     <string name="monthly">Igakuiselt</string>
     <string name="restore_purchases">Taasta ostud</string>
     <string name="pricing_cloud_monthly_note">Arve on esitatud igakuiselt</string>
-    <string name="pricing_cloud_feature_1">Kiire sünkroonimine Android ja töölaua rakenduste vahel</string>
     <string name="pricing_cloud_feature_2">Loendite jagamine pere ja sõpradega</string>
     <string name="pricing_cloud_feature_3">E-kirjast ülesande koostamine koos privaatse saabuvate kirjade postkastiga</string>
-    <string name="pricing_cloud_feature_4">iOS-is saad ühendada teenusega Apple Reminders</string>
     <string name="pricing_nyp_feature_1">Sinu valitud kujundused ja ikoonid</string>
     <string name="pricing_nyp_feature_2">Sünkroonimine sinu valitud teenusega CalDAV-i või EteSynci abil</string>
     <string name="pricing_nyp_feature_3">Toetad avatud lähtekoodiga tarkvara arendust</string>
     <string name="pricing_subscribe_google_play">Telli Google Play teenuses</string>
     <string name="create_a_list">Koosta loend</string>
     <string name="cloud_onboarding_welcome_title">Tere tulemast kasutama Tasks.org-i pilveteenust (Tasks.org Cloud)</string>
-    <string name="cloud_onboarding_welcome_body">Endale Tasks.org-i pilveteenuse konto lisamiseks logi sisse Google'i autentimisega</string>
     <string name="cloud_onboarding_not_now">Mitte praegu</string>
     <string name="cloud_onboarding_faq_title">Korduma kippuvad küsimused</string>
     <string name="cloud_onboarding_create_list_title">Esimesed tegevused</string>
@@ -618,7 +605,7 @@
     <string name="mcp_tools_group_reminders">Meeldetuletused</string>
     <string name="mcp_copy">Kopeeri</string>
     <string name="new_filter">Loo uus filter</string>
-    <string name="sign_in_with_apple">Logi sisse Apple\'i kasutajakontoga</string>
+    <string name="sign_in_with_apple">Logi sisse Apple'i kasutajakontoga</string>
     <string name="mcp_status_starting">Käivitamisel…</string>
     <string name="mcp_status_running">Töötab pordis %1$d</string>
     <string name="mcp_server_enable_summary">Töötab vaid selles arvutis aadressil 127.0.0.1. Liiklus pole avatud võrgu suunas.</string>
@@ -653,7 +640,6 @@
     <string name="works_with_wearables">Kantavad seadmed</string>
     <string name="works_with_services">Ülesannete teenused</string>
     <string name="new_place">Lisa uus asukoht</string>
-    <string name="mcp_server_summary">Luba selle arvuti tehisaru abilistel lugeda ja hallata sinu andmeid</string>
     <string name="mcp_tools_enabled">Sisselülitatud on %1$d %2$d-st</string>
     <string name="mcp_tools_summary">Väljalülitatud tööriista ei pakuta kunagi abilisele, seega ei saa ta paluda sul seda uuesti sisse lülitada. Käivitab serveri uuesti.</string>
     <string name="mcp_regenerate_token">Loo tunnusluba uuesti</string>
@@ -683,7 +669,7 @@
     <string name="works_with_android_description">Telefonid, tahvlid ja Chromebookid</string>
     <string name="works_with_ios">Tasks.org iOS-i jaoks</string>
     <string name="works_with_wear_requires_googleplay">Eeldab Tasks.org-i versiooni, mis on avaldatud Google Play rakendustepoes</string>
-    <string name="works_with_pebble_description">Kellarakendus Pebble\'i nutikellade jaoks</string>
+    <string name="works_with_pebble_description">Kellarakendus Pebble'i nutikellade jaoks</string>
     <string name="works_with_content_provider">Sisupakkuja API</string>
     <string name="works_with_content_provider_description">Loe ja kirjuta Tasks.org-i andmeid oma rakendusest</string>
     <string name="works_with_missing">Kas midagi on puudu? %1$s saada e-kiri aadressile %2$s.</string>
@@ -695,4 +681,24 @@
     <string name="reset_trusted_certificates">Lähtesta usaldatud sertifikaadid</string>
     <string name="reset_trusted_certificates_summary">Järgnevaga unustad serverite kohaselt usaldusväärseks märgitud sertifikaadid ja sertifitseerimiskeskused</string>
     <string name="trusted_certificates_reset">Usaldatud sertifikaadid on lähtestatud</string>
+    <string name="error_purchase_not_verified">Me ei suutnud sinu ostu selles seadmes kinnitada.</string>
+    <string name="error_too_many_requests">Liiga palju katseid. Palun oota mõne minuti jagu ja proovi siis uuesti.</string>
+    <string name="error_billing_unavailable">Arveldamine pole hetkel saadaval. Palun proovi hiljem uuesti.</string>
+    <string name="checkout_finish_in_browser">Lõpeta ostmine veebibrauseris</string>
+    <string name="checkout_expired">Makse leht aegus. Palun proovi uuesti.</string>
+    <string name="pricing_subscribe_for">Tellimus: %1$s</string>
+    <string name="pro_card_credit">%1$s allahindlus lisatakse järgmisele uuendamisele</string>
+    <string name="wrong_account_message_unknown">Sinu tellimus on juba seotud muu kasutajakontoga. Kui sa arvad, et see on viga, siis palun võta ühendust aadressil %1$s</string>
+    <string name="restore_email_heading">Sisesta e-posti aadress, mida kasutasid maksmisel</string>
+    <string name="restore_send_code">Edasta kood</string>
+    <string name="restore_code_sent">Kui sul oli maksmisel kasutusel %1$s, siis saad õige pea koodi.</string>
+    <string name="restore_code">Kood</string>
+    <string name="restore_use_another_email">Kasuta muud aadressi</string>
+    <string name="error_invalid_code">See kood on vigane või aegunud</string>
+    <string name="error_no_purchase_found">Selle e-posti aadressiga ei leidunud ühtegi ostu</string>
+    <string name="restore_renewal_settling">Sinu tellimuse uuendamine on veel töös</string>
+    <string name="purchases_restored">Ostud on taastatud</string>
+    <string name="card_subscription">Tellimus kaardiga</string>
+    <string name="upgrade_blurb_1">Tere! Minu nimi on Alex ja ma olen sõltumatu arendaja, kes on Tasks.org arendust juhtinud</string>
+    <string name="upgrade_blurb_2">Olen Tasks.org loomiseks kulutanud tuhandeid tunde ja ma avaldan kogu rakenduse lähtekoodi veebis vaba litsentsi all. Selleks, et oleks võimalik minu töid ja tegemisi toetada, eeldavad selle rakenduse mõned funktsionaalsused tellimuse olemasolu</string>
 </resources>

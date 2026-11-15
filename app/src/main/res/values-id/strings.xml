@@ -176,7 +176,6 @@
     <string name="badges_description">Tampilkan jumlah tugas pada ikon peluncur Tasks. Tidak semua peluncur mendukung fitur lencana ini.</string>
     <string name="tasker_create_task">Buat tugas</string>
     <string name="help">Bantuan</string>
-    <string name="refresh_purchases">Segarkan pembelian</string>
     <string name="pro_dashclock_extension">Ekstensi Dashclock</string>
     <string name="logout">Keluar</string>
     <string name="reinitialize_account">Inisialisasi ulang</string>
@@ -194,7 +193,6 @@
     <string name="choose_new_location">Pilih lokasi baru</string>
     <string name="invalid_backup_file">Berkas cadangan tidak valid</string>
     <string name="expand_subtasks">Lebarkan subtugas</string>
-    <string name="choose_synchronization_service">Pilih sebuah platform</string>
     <string name="caldav_selection_description">Sinkronisasi yang berdasarkan pada standar internet terbuka</string>
     <string name="etesync_selection_description">Enkripsi klien-ke-klien bersumber terbuka</string>
     <string name="theme_wallpaper">Latar</string>
@@ -254,10 +252,7 @@
     <string name="background_location_permission_required">Aplikasi ini mengumpulkan data lokasi untuk mengaktifkan pengingat berdasarkan lokasi bahkan saat aplikasi ditutup atau sedang tidak digunakan.</string>
     <string name="repeats_plural_number_of_times">Ulangi setiap %1$s, terjadi %2$d %3$s</string>
     <string name="copied_to_clipboard">%s disalin ke papan klip</string>
-    <string name="app_passwords_more_info">Sinkronkan tugas dan kalender Anda dengan aplikasi desktop dan seluler pihak ketiga. Ketuk di sini untuk info selengkapnya</string>
     <string name="app_password">Kata sandi aplikasi</string>
-    <string name="save_percent">Simpan %d%%</string>
-    <string name="above_average">Diatas rata-rata</string>
     <string name="migrate_count">Pindahkan %s ke Tasks.org</string>
     <string name="migrating_tasks">Memindahkan tugas</string>
     <string name="github_sponsor">Sponsor</string>
@@ -265,8 +260,6 @@
     <string name="sign_in_with_google">Masuk dengan Google</string>
     <string name="github_sponsors">Sponsor GitHub</string>
     <string name="authorization_cancelled">Otorisasi dibatalkan</string>
-    <string name="current_subscription">Langganan saat ini: %s</string>
-    <string name="no_google_play_subscription">Tidak ditemukan langganan Google Play yang memenuhi syarat</string>
     <string name="your_subscription_expired">Langganan Anda telah berakhir. Berlangganan kembali untuk melanjutkan layanan.</string>
     <string name="custom_filter_is_subtask">Adalah subtugas</string>
     <string name="custom_filter_has_subtask">Memiliki subtugas</string>
@@ -353,13 +346,6 @@
     <string name="privacy">Privasi</string>
     <string name="open_source">Sumber Terbuka</string>
     <string name="support">Dukung</string>
-    <string name="upgrade_open_source_description">Langganan Anda mendukung kelanjutan pengembangan aplikasi ini</string>
-    <string name="upgrade_tasks_org_account_description">Sinkronkan dengan Tasks.org dan kolaborasi dengan pengguna lain</string>
-    <string name="upgrade_more_customization_description">Buka semua tema, warna, dan ikon</string>
-    <string name="upgrade_more_customization">Lebih banyak kostumisasi</string>
-    <string name="pro_free_trial">Pelanggan baru menerima percobaan aplikasi gratis selama 7-hari. Batalkan kapan saja</string>
-    <string name="upgrade_blurb_2">Saya telah menghabiskan ribuan jam bekerja pada Tasks, dan saya mempublikasikan semua kode sumber online secara gratis. Untuk mendukung pekerjaan saya, beberapa fitur memerlukan berlangganan</string>
-    <string name="upgrade_blurb_1">Hi. Nama saya Alex. Saya adalah pengembang independen dibelakang aplikasi Tasks</string>
     <string name="now">Sekarang</string>
     <string name="completed">Selesai</string>
     <string name="custom_filter_has_reminder">Berpengingat</string>
@@ -372,8 +358,6 @@
     <string name="customize_drawer">Kustomisasi laci</string>
     <string name="sort_list">Berdasarkan daftar</string>
     <string name="TEA_creation_date">Tanggal pembuatan</string>
-    <string name="location_update_interval_summary">Pembaruan lokasi berkala meningkatkan keandalan geofence</string>
-    <string name="rmd_EPr_rmd_time_desc">Notifikasi untuk tugas sepanjang hari akan muncul pada pukul %1$s</string>
     <string name="delete_comment">komentar</string>
     <string name="comment">Komentar</string>
     <string name="yesterday">Kemarin</string>
@@ -400,11 +384,6 @@
     <string name="email_to_task">Email ke tugas</string>
     <string name="email_to_task_address">Alamat email Anda</string>
     <string name="guest_create_list_message">Saat ini Anda memiliki akses tamu ke daftar bersama. Untuk membuat dan menyinkronkan daftar pribadi Anda sendiri ke cloud, Anda memerlukan langganan Tasks.org. Atau, Anda dapat membuat daftar lokal gratis yang tetap berada di perangkat ini.</string>
-    <string name="upgrade_friends_and_family">Keluarga &amp; Teman</string>
-    <string name="upgrade_friends_and_family_description">5 tamu gratis di daftar bersama. Berfungsi dengan Apple Reminders</string>
-    <string name="upgrade_email_to_task_description">Ubah email menjadi tugas dengan meneruskannya ke kotak masuk pribadi Anda</string>
-    <string name="advanced_tools">Alat lanjutan</string>
-    <string name="advanced_tools_description">Google Places, CalDAV, EteSync, dan lainnya!</string>
     <string name="snackbar_tasks_completed">%d tugas diselesaikan</string>
     <string name="hint_customize_edit_title">Terlalu banyak informasi?</string>
     <string name="enable_alarms">Dapatkan notifikasi pada waktu yang tepat</string>
@@ -413,9 +392,6 @@
     <string name="tos_updated_title">Kami telah memperbarui Ketentuan Layanan kami</string>
     <string name="accept">Terima</string>
     <string name="exit">Keluar</string>
-    <string name="returning_user">Pengguna lama?</string>
-    <string name="cost_money">Biaya: $</string>
-    <string name="cost_more_money">Biaya: $$$</string>
     <string name="multiline_title">Izinkan judul multibaris</string>
     <string name="multiline_title_on">Tekan tombol Enter untuk menambah jeda baris</string>
     <string name="multiline_title_off">Tekan Selesai untuk menyimpan tugas</string>

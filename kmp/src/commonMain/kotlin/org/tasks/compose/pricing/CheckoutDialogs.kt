@@ -11,13 +11,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.tasks.TasksUrls
 import org.tasks.compose.settings.MessageDialog
+import org.tasks.compose.settings.conflictingAccountMessage
+import org.tasks.compose.settings.formattedDate
+import org.tasks.kmp.org.tasks.time.DateStyle
+import org.tasks.viewmodel.StripeCheckoutViewModel
 import org.tasks.viewmodel.StripeCheckoutViewModel.Notice
 import tasks.kmp.generated.resources.Res
 import tasks.kmp.generated.resources.action_open
 import tasks.kmp.generated.resources.cancel
+import tasks.kmp.generated.resources.change_plan
+import tasks.kmp.generated.resources.change_plan_card_declined
+import tasks.kmp.generated.resources.change_plan_message
+import tasks.kmp.generated.resources.change_plan_trial
 import tasks.kmp.generated.resources.checkout_expired
 import tasks.kmp.generated.resources.checkout_finish_in_browser
 import tasks.kmp.generated.resources.error_billing_unavailable
@@ -25,8 +34,10 @@ import tasks.kmp.generated.resources.error_contact_support
 import tasks.kmp.generated.resources.error_encryption_failed
 import tasks.kmp.generated.resources.error_purchase_not_verified
 import tasks.kmp.generated.resources.error_too_many_requests
+import tasks.kmp.generated.resources.restore_purchases
+import tasks.kmp.generated.resources.retry
+import tasks.kmp.generated.resources.update_card
 import tasks.kmp.generated.resources.upgrade_subscription_banner
-import tasks.kmp.generated.resources.wrong_account_message
 import tasks.kmp.generated.resources.your_subscription_expired
 
 @Composable
@@ -67,23 +78,117 @@ fun CheckoutProgressDialog(
 fun CheckoutNoticeDialog(
     notice: Notice?,
     onDismiss: () -> Unit,
+    onRetry: () -> Unit = {},
+    onRestore: () -> Unit = {},
+    onOpenPortal: () -> Unit = {},
 ) {
-    if (notice == null) return
-    val message = when (notice) {
-        Notice.NeedsUpgrade -> stringResource(Res.string.upgrade_subscription_banner)
-        Notice.PurchaseGone -> stringResource(Res.string.error_purchase_not_verified)
-        Notice.SubscriptionCancelled -> stringResource(Res.string.your_subscription_expired)
-        is Notice.AccountInUse -> stringResource(
-            Res.string.wrong_account_message,
-            notice.existingAccount,
-            TasksUrls.SUPPORT_EMAIL,
+    when (notice) {
+        null -> Unit
+        Notice.CardDeclined -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(Res.string.change_plan)) },
+            text = { Text(stringResource(Res.string.change_plan_card_declined)) },
+            confirmButton = {
+                TextButton(onClick = onOpenPortal) {
+                    Text(stringResource(Res.string.update_card))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(Res.string.retry))
+                }
+            },
         )
-        Notice.Expired -> stringResource(Res.string.checkout_expired)
-        Notice.SubscriptionInvalid -> stringResource(Res.string.your_subscription_expired)
-        Notice.StorageFailed -> stringResource(Res.string.error_encryption_failed)
-        Notice.RateLimited -> stringResource(Res.string.error_too_many_requests)
-        Notice.Unavailable -> stringResource(Res.string.error_billing_unavailable)
-        Notice.Failed -> stringResource(Res.string.error_contact_support, TasksUrls.SUPPORT_EMAIL)
+        Notice.RestoreRequired,
+        Notice.PurchaseGone -> ActionDialog(
+            message = stringResource(Res.string.error_purchase_not_verified),
+            actionLabel = stringResource(Res.string.restore_purchases),
+            onAction = onRestore,
+            onDismiss = onDismiss,
+        )
+        Notice.ChangeUnavailable -> ActionDialog(
+            message = stringResource(Res.string.error_billing_unavailable),
+            actionLabel = stringResource(Res.string.retry),
+            onAction = onRetry,
+            onDismiss = onDismiss,
+        )
+        Notice.NeedsUpgrade -> Message(Res.string.upgrade_subscription_banner, onDismiss)
+        Notice.SubscriptionCancelled -> Message(Res.string.your_subscription_expired, onDismiss)
+        Notice.AccountLinkConflict -> MessageDialog(
+            message = conflictingAccountMessage(null),
+            onDismiss = onDismiss,
+        )
+        is Notice.AccountInUse -> MessageDialog(
+            message = conflictingAccountMessage(notice.existingAccount),
+            onDismiss = onDismiss,
+        )
+        Notice.Expired -> Message(Res.string.checkout_expired, onDismiss)
+        Notice.SubscriptionInvalid -> Message(Res.string.your_subscription_expired, onDismiss)
+        Notice.EncryptionFailed -> Message(Res.string.error_encryption_failed, onDismiss)
+        Notice.RateLimited -> Message(Res.string.error_too_many_requests, onDismiss)
+        Notice.Unavailable -> Message(Res.string.error_billing_unavailable, onDismiss)
+        Notice.Failed -> MessageDialog(
+            message = stringResource(Res.string.error_contact_support, TasksUrls.SUPPORT_EMAIL),
+            onDismiss = onDismiss,
+        )
     }
-    MessageDialog(message = message, onDismiss = onDismiss)
+}
+
+@Composable
+private fun Message(message: StringResource, onDismiss: () -> Unit) =
+    MessageDialog(message = stringResource(message), onDismiss = onDismiss)
+
+@Composable
+internal fun ActionDialog(
+    message: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onAction) {
+                Text(actionLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+fun ChangePlanConfirmDialog(
+    pending: StripeCheckoutViewModel.PendingChange?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (pending == null) return
+    val cost = intervalPrice(pending.price.formattedPrice, pending.price.isMonthly)
+    val trialEnd = pending.trialEnd
+    val message = if (trialEnd == null) {
+        stringResource(Res.string.change_plan_message, cost)
+    } else {
+        formattedDate(trialEnd, DateStyle.LONG)
+            ?.let { stringResource(Res.string.change_plan_trial, it, cost) }
+    } ?: return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.change_plan)) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(Res.string.change_plan))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
 }

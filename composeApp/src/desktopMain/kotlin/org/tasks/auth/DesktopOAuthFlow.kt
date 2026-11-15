@@ -8,7 +8,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import org.tasks.extensions.openInBrowser
+import org.tasks.extensions.desktopOpenUrl
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.URLDecoder
@@ -23,11 +23,7 @@ class DesktopOAuthFlow(
     private val oauthClient: TasksOAuthClient,
     private val serverEnvironment: TasksServerEnvironment,
     private val callbackTimeoutMillis: Long = CALLBACK_TIMEOUT_MILLIS,
-    private val openUrl: (String) -> Unit = { url ->
-        if (!openInBrowser(url)) {
-            throw IOException("Nothing on this system could open $url")
-        }
-    },
+    private val openUrl: (String) -> Unit = ::desktopOpenUrl,
 ) : OAuthFlow {
     override suspend fun signIn(
         provider: OAuthProvider,
@@ -46,14 +42,14 @@ class DesktopOAuthFlow(
                 ?: throw Exception("No client_id in discovery document")
         }
 
-        val codeVerifier = if (provider.usesPkce) PKCE.generateVerifier() else null
-        val codeChallenge = codeVerifier?.let(PKCE::generateChallenge)
-        val nonce = PKCE.generateVerifier()
         val serverCallback = provider.serverCallbackPath?.let { "${serverEnvironment.caldavUrl}$it" }
+        val codeVerifier = if (provider.usesPkce || serverCallback != null) PKCE.generateVerifier() else null
+        val codeChallenge = codeVerifier?.takeIf { provider.usesPkce }?.let(PKCE::generateChallenge)
+        val nonce = PKCE.generateVerifier()
 
         val (config, code) = listenForCallback(provider.loopbackHost) { port ->
             val redirectUri = "http://${provider.loopbackHost}:$port"
-            val state = if (serverCallback == null) nonce else RedirectState.encode(nonce, redirectUri)
+            val state = if (serverCallback == null) nonce else RedirectState.encode(nonce, redirectUri, codeVerifier!!)
             val config = OAuthConfig(
                 authorizationEndpoint = authEndpoint,
                 tokenEndpoint = tokenEndpoint,

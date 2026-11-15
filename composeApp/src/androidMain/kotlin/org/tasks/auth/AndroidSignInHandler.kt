@@ -55,14 +55,14 @@ class AndroidSignInHandler(
                 ?: throw Exception("No client_id in discovery document")
         }
 
-        val codeVerifier = if (oauthProvider.usesPkce) PKCE.generateVerifier() else null
-        val codeChallenge = codeVerifier?.let(PKCE::generateChallenge)
-        val nonce = PKCE.generateVerifier()
         val serverCallback = oauthProvider.serverCallbackPath?.let { "${serverEnvironment.caldavUrl}$it" }
+        val codeVerifier = if (oauthProvider.usesPkce || serverCallback != null) PKCE.generateVerifier() else null
+        val codeChallenge = codeVerifier?.takeIf { oauthProvider.usesPkce }?.let(PKCE::generateChallenge)
+        val nonce = PKCE.generateVerifier()
 
         val (config, code) = listenForCallback { port ->
             val redirectUri = "http://127.0.0.1:$port"
-            val state = if (serverCallback == null) nonce else RedirectState.encode(nonce, redirectUri)
+            val state = if (serverCallback == null) nonce else RedirectState.encode(nonce, redirectUri, codeVerifier!!)
             val config = OAuthConfig(
                 authorizationEndpoint = authEndpoint,
                 tokenEndpoint = tokenEndpoint,
@@ -86,23 +86,26 @@ class AndroidSignInHandler(
         val result = oauthClient.exchangeCode(config, code, codeVerifier)
 
         try {
-            setupTasksAccount(
-                oauthResult = result,
-                issuer = oauthProvider.issuer,
-                caldavUrl = serverEnvironment.caldavUrl,
-                caldavDao = caldavDao,
-                encryption = encryption,
-                provider = caldavClientProvider,
-                purchaseClaim = purchaseClaim,
-            )
-        } catch (e: HttpException) {
-            if (e.code == 402) {
-                throw PaymentRequiredException()
+            try {
+                setupTasksAccount(
+                    oauthResult = result,
+                    issuer = oauthProvider.issuer,
+                    caldavUrl = serverEnvironment.caldavUrl,
+                    caldavDao = caldavDao,
+                    encryption = encryption,
+                    provider = caldavClientProvider,
+                    purchaseClaim = purchaseClaim,
+                )
+            } catch (e: HttpException) {
+                if (e.code == 402) {
+                    throw PaymentRequiredException()
+                }
+                throw e
             }
-            throw e
+            Logger.i(TAG) { "Account created successfully" }
+        } finally {
+            bringAppToForeground()
         }
-        Logger.i(TAG) { "Account created successfully" }
-        bringAppToForeground()
     }
 
     private fun bringAppToForeground() {

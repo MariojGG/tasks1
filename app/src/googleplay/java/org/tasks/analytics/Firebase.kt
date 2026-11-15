@@ -19,7 +19,6 @@ import org.tasks.preferences.Preferences
 import org.tasks.preferences.TasksPreferences
 import org.tasks.viewmodel.TasksAccountViewModel.Companion.DEFAULT_TOS_VERSION
 import org.tasks.time.DateTimeUtils2.currentTimeMillis
-import org.tasks.time.startOfDay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -35,6 +34,7 @@ class Firebase @Inject constructor(
         private val preferences: Preferences,
         override val tasksPreferences: TasksPreferences,
 ) : Reporting, FcmTokenProvider {
+
     private val crashlytics by lazy {
         if (preferences.isTrackingEnabled) {
             FirebaseCrashlytics.getInstance().apply {
@@ -57,6 +57,7 @@ class Firebase @Inject constructor(
                     preloadFeatureFlags = false
                     sendFeatureFlagEvent = false
                     remoteConfig = false
+                    captureScreenViews = false
 
                     sessionReplay = BuildConfig.DEBUG
                     sessionReplayConfig.maskAllTextInputs = true
@@ -69,6 +70,9 @@ class Firebase @Inject constructor(
             false
         }
     }
+
+    override val analyticsEnabled: Boolean
+        get() = posthogEnabled
 
     private val trackedPrefs by lazy { intArrayOf(
         // Look and feel
@@ -260,16 +264,6 @@ class Firebase @Inject constructor(
         crashlytics?.recordException(t)
     }
 
-    fun reportIabResult(result: String, sku: String = "", state: String, orderId: String = "") {
-        logEvent(
-            R.string.event_purchase_result,
-            R.string.param_sku to sku,
-            R.string.param_result to result,
-            R.string.param_state to state,
-            R.string.param_order_id to orderId,
-        )
-    }
-
     fun updateRemoteConfig() {
         remoteConfig?.fetchAndActivate()?.addOnSuccessListener {
             Timber.d(it.toString())
@@ -284,7 +278,7 @@ class Firebase @Inject constructor(
 
     override fun setSku(sku: String?) {
         Timber.d("sku -> $sku")
-        if (posthogEnabled) {
+        if (analyticsEnabled) {
             if (sku != null) PostHog.register("sku", sku) else PostHog.unregister("sku")
         }
     }
@@ -292,12 +286,13 @@ class Firebase @Inject constructor(
     override fun logEvent(event: String, vararg params: Pair<String, Any>) {
         val properties = params.toMap()
         Timber.d("$event -> $properties")
-        if (posthogEnabled) {
-            PostHog.capture(
-                event = event,
-                properties = properties
-            )
+        if (!analyticsEnabled) {
+            return
         }
+        PostHog.capture(
+            event = event,
+            properties = properties
+        )
     }
 
     fun logEvent(@StringRes event: Int, vararg p: Pair<Int, Any>) {
@@ -307,11 +302,14 @@ class Firebase @Inject constructor(
         )
     }
 
-    fun logEventOncePerDay(@StringRes event: Int, vararg p: Pair<Int, Any>) {
-        val prefKey = "last_logged_${context.getString(event)}"
-        if (preferences.setLongIfGreater(prefKey, currentTimeMillis().startOfDay())) {
-            logEvent(event, *p)
+    suspend fun logEventOncePerDay(@StringRes event: Int, vararg p: Pair<Int, Any>) {
+        if (!analyticsEnabled) {
+            return
         }
+        logEventOncePerDay(
+            event = context.getString(event),
+            params = p.map { context.getString(it.first) to it.second }.toTypedArray(),
+        )
     }
 
     private val installCooldown: Boolean

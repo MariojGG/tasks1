@@ -15,10 +15,6 @@ pluginManagement {
         maven("https://maven.hq.hydraulic.software")
     }
 }
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
-
 val version = java.util.Properties().apply {
     providers.fileContents(layout.rootDirectory.file("version.properties")).asText.get().reader().use(::load)
 }
@@ -59,4 +55,5 @@ include(":wear")
 include(":wear-datalayer")
 include(":cert4android")
 include(":composeApp")
+include(":googleplay")
 include(":baselineprofile")

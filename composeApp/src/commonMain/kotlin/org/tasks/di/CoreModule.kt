@@ -6,6 +6,7 @@ import org.tasks.viewmodel.TasksAccountViewModel
 import org.tasks.viewmodel.GoogleTasksAccountViewModel
 import org.tasks.auth.PurchaseClaim
 import org.tasks.auth.TasksServerEnvironment
+import org.tasks.billing.GitHubSponsorVerifier
 import org.tasks.billing.StripeCheckouts
 import org.tasks.billing.StripeClient
 import org.tasks.billing.StripeClientImpl
@@ -80,6 +81,7 @@ import org.tasks.preferences.DEFAULT_ALARMS_JSON
 import org.tasks.preferences.DataStoreQueryPreferences
 import org.tasks.preferences.DatePickerPreferences
 import org.tasks.preferences.DrawerSettings
+import org.tasks.preferences.InstallId
 import org.tasks.preferences.LookAndFeelSettings
 import org.tasks.preferences.NotificationSettings
 import org.tasks.preferences.PreferencesSnapshot
@@ -539,13 +541,24 @@ val coreModule: Module = module {
         )
     }
     singleOf(::TasksServerEnvironment)
+    single { InstallId(get()) }
     single { TasksAccountDataRepository(getOrNull(), get(), get()) }
+    single {
+        GitHubSponsorVerifier(
+            httpClientFactory = get(),
+            serverEnvironment = get(),
+            purchaseEntitlement = get(),
+            json = get(),
+            installId = { get<InstallId>().get() },
+        )
+    }
     single<StripeClient> {
         StripeClientImpl(
             httpClientFactory = get(),
             caldavUrl = { get<TasksServerEnvironment>().caldavUrl },
             json = get(),
             authorization = { tasksSessionAuthorization(get(), get()) },
+            installId = { get<InstallId>().get() },
         )
     }
     single {
@@ -557,9 +570,10 @@ val coreModule: Module = module {
             accountData = get(),
             tasksPreferences = get(),
             logOnboarding = { step -> get<Reporting>().logCloudOnboarding(step) },
+            analytics = get<Reporting>(),
         ).also { it.claimOnSignIn(get()) }
     } binds arrayOf(StripeCheckouts::class, PurchaseClaim::class)
-    viewModel { StripeCheckoutViewModel(purchases = get()) }
+    viewModel { StripeCheckoutViewModel(purchases = get(), reporting = get(), background = get()) }
     single {
         PushTokenManager(
             tokenProvider = getOrNull() ?: object : FcmTokenProvider {

@@ -16,6 +16,7 @@ class PostHogReporting(
     override val tasksPreferences: TasksPreferences,
 ) : Reporting {
     private val logger = Logger.withTag("PostHogReporting")
+    private val exceptionThrottle = ExceptionThrottle()
 
     private val collectStatistics: Boolean =
         kotlinx.coroutines.runBlocking {
@@ -56,15 +57,19 @@ class PostHogReporting(
         }
     }
 
+    override val analyticsEnabled: Boolean
+        get() = enabled
+
     override fun logEvent(event: String, vararg params: Pair<String, Any>) {
         val properties = params.toMap()
         logger.d { "$event -> $properties" }
-        if (enabled && collectStatistics) {
-            PostHog.capture(
-                event = event,
-                properties = properties,
-            )
+        if (!analyticsEnabled) {
+            return
         }
+        PostHog.capture(
+            event = event,
+            properties = properties,
+        )
     }
 
     override fun addTask(source: String) =
@@ -75,7 +80,7 @@ class PostHogReporting(
 
     override fun setSku(sku: String?) {
         logger.d { "sku -> $sku" }
-        if (enabled && collectStatistics) {
+        if (analyticsEnabled) {
             if (sku != null) PostHog.register("sku", sku) else PostHog.unregister("sku")
         }
     }
@@ -83,7 +88,9 @@ class PostHogReporting(
     override fun reportException(t: Throwable, fatal: Boolean) {
         if (t is CancellationException) return
         logger.e(t) { t.message ?: "" }
-        if (enabled && collectStatistics) {
+        val decision = exceptionThrottle.check(t)
+        if (decision !is ExceptionThrottle.Decision.Report) return
+        if (analyticsEnabled) {
             PostHog.capture(
                 event = "exception",
                 properties = mapOf(
@@ -91,13 +98,14 @@ class PostHogReporting(
                     "class" to t.javaClass.name,
                     "stacktrace" to t.stackTraceToString(),
                     "fatal" to fatal,
+                    "suppressed_count" to decision.suppressed,
                 ),
             )
         }
     }
 
     fun close() {
-        if (enabled) {
+        if (analyticsEnabled) {
             PostHog.close()
         }
     }

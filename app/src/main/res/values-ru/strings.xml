@@ -160,7 +160,7 @@
     <string name="location_radius_meters">%s м</string>
     <string name="tags">Теги</string>
     <string name="date_shortcut_morning">Утро</string>
-    <string name="date_shortcut_afternoon">Обед</string>
+    <string name="date_shortcut_afternoon">День</string>
     <string name="date_shortcut_evening">Вечер</string>
     <string name="date_shortcut_night">Ночь</string>
     <string name="date_shortcut_must_come_before">%1$s должно идти перед %2$s</string>
@@ -196,8 +196,8 @@
     <string name="clear_completed_tasks_confirmation">Очистить завершенные задачи?</string>
     <string name="copy_multiple_tasks_confirmation">Клонировано %s задач(и)</string>
     <string name="delete_multiple_tasks_confirmation">%s удалено</string>
-    <string name="delete_selected_tasks">Удалить выделенную(-ые) задачу(-и)?</string>
-    <string name="copy_selected_tasks">Скопировать выделенные задачи?</string>
+    <string name="delete_selected_tasks">Удалить выбранные задачи?</string>
+    <string name="copy_selected_tasks">Скопировать выбранные задачи?</string>
     <string name="user">Пользователь</string>
     <string name="password">Пароль</string>
     <string name="badges">Ярлыки</string>
@@ -209,7 +209,6 @@
     <string name="tasker_create_task">Создать задачу</string>
     <string name="tasker_list_notification">Список уведомлений</string>
     <string name="help">Помощь</string>
-    <string name="refresh_purchases">Обновить покупки</string>
     <string name="pro_dashclock_extension">Расширение для Dashclock</string>
     <string name="logout">Отключиться</string>
     <string name="reinitialize_account">Инициализировать заново</string>
@@ -240,7 +239,6 @@
     <string name="expand_subtasks">Развернуть подзадачи</string>
     <string name="collapse_subtasks">Свернуть подзадачи</string>
     <string name="display_name">Отображаемое название</string>
-    <string name="choose_synchronization_service">Выберите платформу</string>
     <string name="caldav_selection_description">Синхронизация, основанная на открытых стандартах</string>
     <string name="etesync_selection_description">Синхронизация с использованием сквозного шифрования</string>
     <string name="show_advanced_settings">Показать расширенные настройки</string>
@@ -249,8 +247,6 @@
     <string name="preferences_advanced">Расширенные</string>
     <string name="theme_system_default">Как в системе</string>
     <string name="color_wheel">Палитра</string>
-    <string name="upgrade_blurb_1">Привет! Меня зовут Алекс. Я - независимый разработчик, стоящий за программой Tasks</string>
-    <string name="upgrade_blurb_2">Я потратил тысячи часов, работая над Tasks, и я публикую весь исходный код онлайн, бесплатно. Для того, чтобы поддержать мою работу, некоторые функциональности требуют подписки</string>
     <string name="back">Назад</string>
     <string name="chips">Индикаторы</string>
     <string name="chip_appearance">Внешний вид индикаторов</string>
@@ -274,7 +270,7 @@
     <string name="auto_dismiss_datetime_edit">Редактирование задачи</string>
     <string name="auto_dismiss_datetime_list_summary">Автоматически закрывать при выборе из списка задач</string>
     <string name="auto_dismiss_datetime_list">Список задач</string>
-    <string name="widget_due_date_hidden">Спрятано</string>
+    <string name="widget_due_date_hidden">Скрыто</string>
     <string name="widget_due_date_below_title">Под названием</string>
     <string name="widget_due_date_after_title">После названия</string>
     <string name="opacity_footer">Непрозрачность футера</string>
@@ -334,7 +330,6 @@
     <string name="cancel">Отмена</string>
     <string name="ok">ОК</string>
     <string name="multi_select_reschedule">Перенести</string>
-    <string name="current_subscription">Текущая подписка: %s</string>
     <string name="your_subscription_expired">Срок действия вашей подписки истек. Подпишитесь сейчас, чтобы возобновить обслуживание.</string>
     <string name="background_location_permission_required">Tasks собирает данные геолокации, чтобы активировать напоминания на основе местоположения, даже когда приложение закрыто или не используется.</string>
     <string name="migrate_count">Переместить %s на Tasks.org</string>
@@ -344,12 +339,8 @@
     <string name="sign_in_with_google">Войти через Google</string>
     <string name="github_sponsors">Спонсоры GitHub</string>
     <string name="authorization_cancelled">Авторизация отменена</string>
-    <string name="no_google_play_subscription">Подходящей подписки Google Play не найдено</string>
-    <string name="above_average">Выше среднего</string>
-    <string name="save_percent">Сохранить %d%%</string>
     <string name="decsync_selection_description">Синхронизация с использованием локального файла</string>
     <string name="copied_to_clipboard">%s скопировано в буфер обмена</string>
-    <string name="app_passwords_more_info">Синхронизируйте свои задачи и календари со сторонними настольными и мобильными приложениями. Нажмите здесь, чтобы узнать больше</string>
     <string name="app_password">Пароль приложения</string>
     <string name="local_lists">Локальные списки</string>
     <string name="start_date">Дата начала</string>
@@ -365,11 +356,6 @@
     <string name="privacy">Конфиденциальность</string>
     <string name="open_source">Открытый исходный код</string>
     <string name="support">Поддержка</string>
-    <string name="upgrade_open_source_description">Ваша подписка поддерживает продолжающуюся разработку</string>
-    <string name="upgrade_tasks_org_account_description">Синхронизируйтесь с Tasks.org и сотрудничайте с другими пользователями</string>
-    <string name="upgrade_more_customization_description">Разблокировать все темы, цвета и иконки</string>
-    <string name="upgrade_more_customization">Больше настроек</string>
-    <string name="pro_free_trial">Новые подписчики получают 7-дневный бесплатный пробный период. Отмена возможна в любое время</string>
     <string name="now">Сейчас</string>
     <string name="completed">Завершено</string>
     <string name="snackbar_task_completed">Задача выполнена</string>
@@ -398,8 +384,6 @@
     <string name="button_learn_more">Узнать больше</string>
     <string name="enable_alarms">Получайте напоминания вовремя</string>
     <string name="enable_alarms_description">Чтобы получать оповещения в нужное время, разрешите приложению устанавливать будильники и напоминания в Настройках</string>
-    <string name="cost_money">Цена: $</string>
-    <string name="cost_more_money">Цена: $$$</string>
     <string name="multiline_title_on">Нажмите Enter чтобы перейти на новую строку</string>
     <string name="donate_nag">Выразите свою поддержку с помощью пожертвования!</string>
     <string name="theme_dynamic">Динамическая</string>
@@ -414,15 +398,21 @@
     <string name="widget_view_more_tasks">Просмотреть больше задач</string>
     <string name="import_failed">Не удалось импортировать</string>
     <string name="import_failed_message">Не удалось прочитать файл резервной копии</string>
-    <string name="location_update_interval_summary">Периодическое обновление местоположения повышает надёжность геозон</string>
-    <string name="rmd_EPr_rmd_time_desc">Уведомления для задач на весь день появятся в %1$s</string>
     <string name="sort_options">Параметры сортировки</string>
     <string name="banner_subscription_required_body">Заплатите любую сумму, чтобы разблокировать синхронизацию %s</string>
     <string name="subscription_required_fdroid">Для использования синхронизации Tasks.org требуется подписка. Оформить подписку можно только через версию Tasks в Google Play.</string>
     <string name="sponsorship_required_fdroid">Для использования синхронизации Tasks.org требуется спонсорство на GitHub. Нажмите ниже, чтобы стать спонсором.</string>
     <string name="email_to_task_address">Ваш адрес электронной почты</string>
     <string name="guest_create_list_message">У вас гостевой доступ к общим спискам. Чтобы создавать и синхронизировать свои приватные списки с облаком, нужна подписка Tasks.org. Также вы можете создать бесплатный локальный список — он будет храниться только на этом устройстве.</string>
-    <string name="upgrade_desktop_app">Tasks.org для компьютера</string>
-    <string name="upgrade_desktop_app_description">Ранний доступ к новому настольному приложению</string>
-    <string name="write_permission_label">Изменить задачу</string>
+    <string name="write_permission_label">Изменение задач</string>
+    <string name="p_per_list_sort">индивидуальная_сортировка_списков</string>
+    <string name="per_list_sort_title">Индивидуальная сортировка списков</string>
+    <string name="per_list_sort_summary">Сохранять параметры сортировки и группировки независимо для каждого списка</string>
+    <string name="permission_write_tasks">Добавление, изменение и удаление ваших задач, списков, меток и мест</string>
+    <string name="email_to_task">Создать задачу через Email</string>
+    <string name="legal_disclosure_prefix_using">Используя Tasks.org</string>
+    <string name="tos_updated_title">Мы обновили Условия использования</string>
+    <string name="accept">Принять</string>
+    <string name="exit">Выход</string>
+    <string name="read_more">Читать далее</string>
 </resources>

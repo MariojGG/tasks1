@@ -138,10 +138,6 @@
     <string name="discard_changes">மாற்றங்களை கைவிடலாமா?</string>
     <string name="discard">நிராகரி</string>
     <string name="delete">அழி</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d பட்டியல்</item>
-        <item quantity="other">%1$d பட்டியல்கள்</item>
-    </plurals>
     <string name="caldav_server_other">மற்றொன்று</string>
     <string name="caldav_server_type">சேவையக வகை</string>
     <string name="caldav_server_unknown">தெரியவில்லை</string>
@@ -153,7 +149,6 @@
     <string name="url_invalid_scheme">Http (கள்) உடன் தொடங்க வேண்டும்: //</string>
     <string name="url_required">URL தேவை</string>
     <string name="username_required">பயனர்பெயர் தேவை</string>
-    <string name="etesync_account_description">EteSync.com அல்லது சுய ஹோஸ்ட் செய்த சேவையகத்துடன் கணக்கு தேவை</string>
     <string name="show_advanced_settings">மேம்பட்ட அமைப்புகளைக் காட்டு</string>
     <string name="app_settings">பயன்பாட்டு அமைப்புகள்</string>
     <string name="whats_new">புதியது என்ன</string>
@@ -459,4 +454,6 @@
     <string name="mcp_tools_group_reminders">நினைவூட்டல்கள்</string>
     <string name="mcp_copy">நகலெடுக்கவும்</string>
     <string name="new_filter">புதிய வடிப்பானை உருவாக்கவும்</string>
+    <string name="upgrade_blurb_1">வணக்கம்! என் பெயர் அலெக்ஸ். Tasks.org-க்குப் பின்னால் உள்ள சுயாதீன டெவலப்பர் நான்</string>
+    <string name="upgrade_blurb_2">நான் Tasks.org-இல் ஆயிரக்கணக்கான மணிநேரங்களை செலவிட்டேன், மேலும் மூலக் குறியீடு அனைத்தையும் ஆன்லைனில் இலவசமாக வெளியிடுகிறேன். எனது பணியை ஆதரிக்க சில அம்சங்களுக்கு சந்தா தேவை</string>
 </resources>

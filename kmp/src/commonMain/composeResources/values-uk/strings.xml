@@ -139,12 +139,6 @@
     <string name="discard_changes">Скасувати зміни?</string>
     <string name="discard">Скасувати</string>
     <string name="delete">Видалити</string>
-    <plurals name="list_count">
-        <item quantity="one">%1$d список</item>
-        <item quantity="few">%1$d списка</item>
-        <item quantity="many">%1$d списків</item>
-        <item quantity="other">%1$d списків</item>
-    </plurals>
     <string name="caldav_server_other">Інший</string>
     <string name="caldav_server_type">Тип сервера</string>
     <string name="caldav_server_unknown">Невідомий</string>
@@ -156,7 +150,6 @@
     <string name="url_invalid_scheme">Має починатися з http(s)://</string>
     <string name="url_required">Потрібний URL</string>
     <string name="username_required">Потрібне ім'я користувача</string>
-    <string name="etesync_account_description">Потрібний обліковий запис у EteSync.com або власний сервер</string>
     <string name="show_advanced_settings">Показати розширені налаштування</string>
     <string name="app_settings">Налаштування застосунку</string>
     <string name="whats_new">Що нового</string>
@@ -481,8 +474,8 @@
     <string name="mcp_tools_group_reminders">Нагадування</string>
     <string name="mcp_copy">Копіювати</string>
     <string name="show_completed_subtasks">Показати виконані підзавдання</string>
-    <string name="wear_phone_update_required">Оновлення телефона обов\'язкове</string>
-    <string name="wear_connecting_to_phone">Під\'єднання до телефона…</string>
+    <string name="wear_phone_update_required">Оновлення телефона обов'язкове</string>
+    <string name="wear_connecting_to_phone">Під'єднання до телефона…</string>
     <string name="edit_task">Змінити завдання</string>
     <string name="task_title">Загаловок завдання</string>
     <string name="no_list_available">Немає доступних списків</string>
@@ -495,7 +488,7 @@
     <string name="sort_modified">Змінено</string>
     <string name="all_done">Усе виконано!</string>
     <string name="add_platform_account">Додати обліковий запис %1$s</string>
-    <string name="works_with_desktop">Tasks.org для комп\'ютера</string>
+    <string name="works_with_desktop">Tasks.org для комп'ютера</string>
     <string name="new_filter">Створити новий фільтр</string>
     <string name="email_to_task_address">Ваша адреса е-пошти</string>
     <string name="legal_disclosure_prefix_using">Використовуючи Tasks.org</string>
@@ -503,4 +496,6 @@
     <string name="accept">Прийняти</string>
     <string name="email_to_task">Е-лист до завдання</string>
     <string name="subscription_required">Потрібна передплата</string>
+    <string name="upgrade_blurb_1">Привіт! Моє ім'я Алекс. Я - незалежний розробник Tasks.org</string>
+    <string name="upgrade_blurb_2">Я витратив тисячі годин, працюючи над Tasks.org, і я публікую весь код онлайн безоплатно. Щоб підтримати мою роботу, деякі функції потребують підписки</string>
 </resources>

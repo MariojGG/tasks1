@@ -140,7 +140,7 @@
     <string name="attachment_directory">첨부파일 위치</string>
     <string name="backup_directory">백업 위치</string>
     <string name="miscellaneous">기타</string>
-    <string name="enabled">활성화됨</string>
+    <string name="enabled">켬</string>
     <string name="font_size">글자 크기</string>
     <string name="row_spacing">줄 간격</string>
     <string name="customize_edit_screen">할일 편집화면 레이아웃 설정하기</string>
@@ -198,7 +198,6 @@
     <string name="tasker_create_task">할일 만들기</string>
     <string name="tasker_list_notification">목록 알림</string>
     <string name="help">도움말</string>
-    <string name="refresh_purchases">구매 새로고침</string>
     <string name="pro_dashclock_extension">Dashclock 확장프로그램</string>
     <string name="logout">로그아웃</string>
     <string name="reinitialize_account">다시 초기화하기</string>
@@ -229,7 +228,6 @@
     <string name="expand_subtasks">하위할일 펼치기</string>
     <string name="collapse_subtasks">하위할일 접기</string>
     <string name="subtasks">하위할일</string>
-    <string name="choose_synchronization_service">플랫폼 선택</string>
     <string name="caldav_selection_description">개방형 인터넷 표준을 바탕으로 한 동기화</string>
     <string name="etesync_selection_description">종단간 암호화된 동기화</string>
     <string name="show_advanced_settings">고급 설정 표시</string>
@@ -241,10 +239,8 @@
     <string name="chip_appearance_text_and_icon">글자와 아이콘</string>
     <string name="place_settings">장소 설정</string>
     <string name="places">장소</string>
-    <string name="upgrade_blurb_1">안녕하세요! Tasks의 1인 개발자 알렉스입니다</string>
     <string name="chip_appearance">칩 모양</string>
     <string name="chips">칩</string>
-    <string name="upgrade_blurb_2">저는 Tasks 개발에 엄청나게 많은 시간을 쏟고 있으며, 모든 소스코드를 웹에 무상으로 공개하고 있습니다. 저의 작업을 후원하기 위해 일부 기능은 구독이 필요합니다</string>
     <string name="color_wheel">색상환</string>
     <string name="documentation">문서</string>
     <string name="preferences_advanced">고급</string>
@@ -317,7 +313,6 @@
     <string name="astrid_sort_order_summary">\'나의 할일\', \'오늘\', 태그 화면에서 Astrid 수동 정렬을 사용할 수 있습니다. 추후 업데이트 시 \'순서 직접 정렬\' 을 이 방식으로 대체할 예정입니다</string>
     <string name="astrid_sort_order">Astrid 수동 정렬</string>
     <string name="authorization_cancelled">인증 취소됨</string>
-    <string name="current_subscription">현재 구독: %s</string>
     <string name="your_subscription_expired">구독이 만료되었습니다. 서비스를 재개하려면 지금 구독하세요.</string>
     <string name="background_location">백그라운드 위치정보</string>
     <string name="permission_read_tasks">Tasks 데이터베이스에 대한 전체 액세스</string>
@@ -328,7 +323,6 @@
     <string name="authentication_required">인증 필요</string>
     <string name="sign_in_with_google">구글을 이용해서 로그인</string>
     <string name="github_sponsors">깃허브 후원자</string>
-    <string name="no_google_play_subscription">적합한 구글 플레이 구독을 찾을 수 없습니다</string>
     <string name="custom_filter_is_subtask">하위할일</string>
     <string name="custom_filter_has_subtask">하위할일 있음</string>
     <string name="always_display_full_date">일시 간략화하지 않고 그대로 표시</string>
@@ -340,16 +334,8 @@
     <string name="no_start_date">시작일 없음</string>
     <string name="CFC_startBefore_name">시작일…</string>
     <string name="CFC_startBefore_text">시작일: \?</string>
-    <string name="save_percent">%d%% 절약</string>
-    <string name="upgrade_open_source_description">구독하시면 지속적인 개발을 지원합니다</string>
-    <string name="upgrade_tasks_org_account_description">Tasks.org와 동기화 및 다른 사용자와 협업</string>
-    <string name="upgrade_more_customization_description">모든 테마, 색상, 아이콘 사용</string>
-    <string name="upgrade_more_customization">더 다양한 맞춤설정</string>
-    <string name="pro_free_trial">새 구독자는 7일간 무료 체험이 가능합니다. 언제라도 취소할 수 있습니다</string>
-    <string name="app_passwords_more_info">타사 데스크탑 및 모바일 앱으로 할일과 달력을 동기화합니다. 자세한 정보는 여기를 탭하세요</string>
     <string name="tasks_org_account_required">Tasks.org 계정 필요</string>
     <string name="copied_to_clipboard">클립보드로 %s 건 복사</string>
-    <string name="above_average">평균 이상</string>
     <string name="app_password">앱 비밀번호</string>
     <string name="privacy">개인정보</string>
     <string name="open_source">오픈 소스</string>
@@ -386,9 +372,7 @@
     <string name="price_per_month_with_currency">%s/월</string>
     <string name="price_per_year_with_currency">%s/년</string>
     <string name="yesterday">어제</string>
-    <string name="cost_money">비용: $</string>
     <string name="multiline_title_on">줄을 바꾸려면 엔터키를 누르세요</string>
-    <string name="cost_more_money">비용: $$$</string>
     <string name="sync_warning_microsoft_title">마이크로소프트 To Do 동기화</string>
     <string name="button_learn_more">더 알아보기</string>
     <string name="sync_warning_google_tasks_title">Google Task 동기화에 대하여</string>
@@ -402,4 +386,24 @@
     <string name="multiline_title_off">할 일을 저장하려면 완료를 누르세요</string>
     <string name="sync_warning_microsoft">모든 할 일이 Microsoft To Do와 동기화되지는 않습니다.</string>
     <string name="sync_warning_google_tasks">모든 할 일이 Google Tasks와 동기화되진 않습니다.</string>
+    <string name="import_failed">가져오기 실패</string>
+    <string name="import_failed_message">백업 파일을 읽을 수 없습니다</string>
+    <string name="sort_options">정렬 옵션</string>
+    <string name="legal_disclosure_prefix_using">Tasks.org를 사용하면</string>
+    <string name="tos_updated_title">이용약관을 변경함</string>
+    <string name="accept">동의</string>
+    <string name="exit">종료</string>
+    <string name="read_more">더 알아보기</string>
+    <string name="write_permission_label">할일 편집</string>
+    <string name="widget_view_more_tasks">할일 더보기</string>
+    <string name="guest_create_list_message">현재 공유 목록에 게스트 접근 권한이 있습니다. 내 개인 목록을 만들고 클라우드에 동기화하려면 Tasks.org 구독 서비스를 이용해야 합니다. 아니면 무료로 이 기기에만 저장되는 로컬 목록을 만들 수 있습니다.</string>
+    <string name="email_to_task">이메일을 할일로</string>
+    <string name="email_to_task_address">내 이메일 주소</string>
+    <string name="sponsorship_required_fdroid">GitHub 후원자가 되어야 Tasks.org 동기화를 이용할 수 있습니다. 아래를 눌러 후원자가 되어 보세요.</string>
+    <string name="subscription_required_fdroid">Tasks.org 동기화를 이용하려면 구독해야 합니다. 구독은 Google Play 버전의 Tasks 앱에서 진행해야 합니다.</string>
+    <string name="permission_write_tasks">할일, 목록, 태그, 장소를 추가, 변경, 삭제</string>
+    <string name="per_list_sort_title">목록별 정렬</string>
+    <string name="per_list_sort_summary">각 목록의 개별 정렬 및 분류 설정 기억</string>
+    <string name="banner_subscription_required_body">%s 동기화를 이용하려면 원하시는 만큼 결제해 주세요</string>
+    <string name="p_per_list_sort">per_list_sort</string>
 </resources>

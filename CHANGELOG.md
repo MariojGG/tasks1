@@ -1,3 +1,38 @@
+### 15.14 (2026-11-13)
+
+* Add support for user certificate stores [#2137](https://github.com/tasks/tasks/issues/2137)
+
+Android:
+  * Google Play: Unlock features by restoring a card or GitHub payment
+  * F-Droid: Subscribe to Tasks.org Cloud or donate in-app with a card
+  * Add support for SilentSuite app
+  * Add support for DAVsky app [#4689](https://github.com/tasks/tasks/issues/4689)
+  * Fix crash on large descriptions [#3333](https://github.com/tasks/tasks/issues/3333)
+  * Fix 16kb alignment [#4582](https://github.com/tasks/tasks/issues/4582)
+  * Fix crash in settings screen
+
+Desktop:
+  * Add support for card payments
+  * Fix Windows ARM EteSync support
+
+Update translations:
+  * Armenian - Maxim Mkrtchyan
+  * Chinese (Simplified) - hamburger2048
+  * Danish - @bargib
+  * Dutch - Stephan Paternotte
+  * Esperanto - Don Zouras
+  * Estonian - Priit Jõerüüt
+  * French - @FlorianLeChat
+  * German - C. Rüdinger, pa po
+  * Hebrew - @ginger-co
+  * Italian - @ppasserini
+  * Japanese - Norara
+  * Korean - justcontributor
+  * Russian - @PONYATIN, Alexander P., George Shchennikov
+  * Serbian - @vale-decem
+  * Turkish - @emintufan, @oersen
+  * Uzbek - Davlat Davlatov
+
 ### 15.13 (2026-10-13)
 
 * Update icon set and add 1,800+ icons

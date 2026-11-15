@@ -9,10 +9,17 @@ import org.koin.dsl.module
 import org.tasks.analytics.Reporting
 import org.tasks.auth.AndroidSignInHandler
 import org.tasks.auth.SignInHandler
-import kotlinx.coroutines.flow.flowOf
-import org.tasks.TasksBuildConfig
+import android.content.Intent
+import android.net.Uri
+import org.tasks.billing.CompositeSubscriptionProvider
+import org.tasks.billing.GitHubSponsorClient
+import org.tasks.extensions.bringTasksToForeground
+import org.tasks.billing.GitHubSponsorVerifier
+import org.tasks.billing.LoopbackGitHubSponsorClient
 import org.tasks.billing.EntitlementSubscriptionProvider
+import org.tasks.billing.debugProFlow
 import org.tasks.billing.PurchaseEntitlement
+import org.tasks.billing.StoreSubscriptionProvider
 import org.tasks.billing.SubscriptionProvider
 import org.tasks.caldav.FileStorage
 import org.tasks.caldav.VtodoCache
@@ -49,6 +56,7 @@ actual fun platformModule(): Module = module {
         val tasksPreferences = get<TasksPreferences>()
         object : Reporting {
             override val tasksPreferences = tasksPreferences
+            override val analyticsEnabled = false
             override fun logEvent(event: String, vararg params: Pair<String, Any>) {}
             override fun addTask(source: String) {}
             override fun completeTask(source: String) {}
@@ -57,6 +65,19 @@ actual fun platformModule(): Module = module {
         }
     }
     single<KeyStoreEncryption> { AndroidKeyStoreEncryption() }
+    single<GitHubSponsorClient> {
+        val context = androidContext()
+        LoopbackGitHubSponsorClient(
+            verify = get<GitHubSponsorVerifier>()::verify,
+            openUrl = { url ->
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            },
+            onCallback = { context.bringTasksToForeground() },
+        )
+    }
     factory<SignInHandler> { AndroidSignInHandler(androidContext(), get(), get(), get(), get(), get()) }
     single<Database> {
         val context = androidContext()
@@ -88,19 +109,18 @@ actual fun platformModule(): Module = module {
             serverEnvironment = get(),
             scope = get(),
             json = get(),
-            syncAdapters = get(),
+            syncAdapters = { get() },
         ).also { it.initialize() }
     }
     single<SubscriptionProvider> {
-        val tasksPreferences = get<TasksPreferences>()
-        EntitlementSubscriptionProvider(
+        val entitlement = EntitlementSubscriptionProvider(
             entitlement = get(),
-            debugPro = if (TasksBuildConfig.DEBUG) {
-                tasksPreferences.flow(TasksPreferences.debugPro, false)
-            } else {
-                flowOf(false)
-            },
+            debugPro = get<TasksPreferences>().debugProFlow,
         )
+        when (val store = getOrNull<StoreSubscriptionProvider>()) {
+            null -> entitlement
+            else -> CompositeSubscriptionProvider(listOf(store, entitlement))
+        }
     }
     factory { FileStorage(androidContext().filesDir.absolutePath) }
     factory {

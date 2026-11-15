@@ -97,7 +97,6 @@ import org.tasks.activities.PlaceSettingsActivity
 import org.tasks.activities.TagSettingsActivity
 import org.tasks.analytics.Firebase
 import org.tasks.billing.PurchaseActivity
-import org.tasks.billing.PurchaseActivityViewModel
 import org.tasks.caldav.BaseCaldavCalendarSettingsActivity
 import org.tasks.caldav.LocalListSettingsActivity
 import org.tasks.caldav.TasksAccountDataRepository
@@ -443,7 +442,11 @@ class TaskListFragment : Fragment(), OnRefreshListener, Toolbar.OnMenuItemClickL
                 listViewModel.updateBannerState()
                 launch {
                     listViewModel.banner.collect { banner ->
+                        val wasAtTop = !recyclerView.canScrollVertically(-1)
                         bannerAdapter.showBanner = banner != null
+                        if (banner != null && wasAtTop) {
+                            recyclerView.scrollToPosition(0)
+                        }
                     }
                 }
                 if (TasksBuildConfig.DEBUG) {
@@ -601,11 +604,11 @@ class TaskListFragment : Fragment(), OnRefreshListener, Toolbar.OnMenuItemClickL
                                                 PurchaseActivity::class.java
                                             ).apply {
                                                 putExtra(
-                                                    PurchaseActivityViewModel.EXTRA_NAME_YOUR_PRICE,
+                                                    PurchaseActivity.EXTRA_NAME_YOUR_PRICE,
                                                     !isTasksOrg
                                                 )
                                                 putExtra(
-                                                    PurchaseActivityViewModel.EXTRA_SOURCE,
+                                                    PurchaseActivity.EXTRA_SOURCE,
                                                     "banner"
                                                 )
                                             }
@@ -624,7 +627,7 @@ class TaskListFragment : Fragment(), OnRefreshListener, Toolbar.OnMenuItemClickL
                                                     context,
                                                     PurchaseActivity::class.java
                                                 ).putExtra(
-                                                    PurchaseActivityViewModel.EXTRA_SOURCE,
+                                                    PurchaseActivity.EXTRA_SOURCE,
                                                     "nag"
                                                 )
                                             )

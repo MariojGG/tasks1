@@ -216,7 +216,6 @@
     <string name="tasker_create_task">Sukurti užduotį</string>
     <string name="tasker_list_notification">Rodyti pranešimus</string>
     <string name="help">Pagalba</string>
-    <string name="refresh_purchases">Atnaujinti pirkimus</string>
     <string name="pro_dashclock_extension">Dashclock plėtinys</string>
     <string name="logout">Atsijungti</string>
     <string name="reinitialize_account">Inicijuoti iš naujo</string>
@@ -281,8 +280,6 @@
     <string name="show_advanced_settings">Rodyti išplėstinius nustatymus</string>
     <string name="start_date">Pradžios data</string>
     <string name="SSD_sort_my_order">Mano užsakymas</string>
-    <string name="upgrade_open_source_description">Jūsų prenumerata palaiko tolesnį kūrimą</string>
-    <string name="upgrade_more_customization_description">Atrakinkite visas temas, spalvas ir piktogramas</string>
     <string name="CFC_list_name">Yra sąraše…</string>
     <string name="no_start_date">Be pradžios datos</string>
     <string name="CFC_startBefore_name">Pradėti iki…</string>
@@ -290,9 +287,6 @@
     <string name="astrid_sort_order">Astrid rankinis rūšiavimas</string>
     <string name="cancel">Atšaukti</string>
     <string name="ok">Gerai</string>
-    <string name="pro_free_trial">Naujiems prenumeratoriams suteikiamas 7 dienų nemokamas bandomasis laikotarpis. Atšaukite bet kuriuo metu</string>
-    <string name="upgrade_more_customization">Daugiau tinkinimo</string>
-    <string name="upgrade_tasks_org_account_description">Sinchronizuokite su Tasks.org ir bendradarbiaukite su kitais naudotojais</string>
     <string name="account">Paskyra</string>
     <string name="last_backup_never">niekada</string>
     <string name="lists">Sąrašai</string>
@@ -312,13 +306,9 @@
     <string name="foreground_location">Vietos nustatymas</string>
     <string name="background_location">Foninis vietos nustatymas</string>
     <string name="multi_select_reschedule">Perplanuoti</string>
-    <string name="save_percent">Sutaupykite %d%%</string>
-    <string name="above_average">Virš vidurkio</string>
-    <string name="no_google_play_subscription">Nerasta tinkamos Google Play prenumeratos</string>
     <string name="github_sponsor">Remti</string>
     <string name="github_sponsors">GitHub rėmėjai</string>
     <string name="sign_in_with_google">Prisijungti naudojant Google</string>
-    <string name="current_subscription">Dabartinė prenumerata: %s</string>
     <string name="migrate_count">Migruoti %s į Tasks.org</string>
     <string name="migrating_tasks">Migruojamos užduotys</string>
     <string name="background_location_permission_required">Tasks renka vietovės duomenis, kad įgalintų priminimus pagal vietovę, net kai programa uždaryta arba nenaudojama.</string>
@@ -328,7 +318,6 @@
     <string name="widget_show_dividers">Rodyti perskyrimus</string>
     <string name="widget_show_title">Rodyti pavadinimą</string>
     <string name="astrid_sort_order_summary">Įgalinti rankinį Astrid rūšiavimo režimą „Mano užduotys“, „Šiandien“ ir etiketėms. Ateityje atnaujinant šis rūšiavimo režimas bus pakeistas į „Mano rūšiavimas“</string>
-    <string name="app_passwords_more_info">Sinchronizuokite savo užduotis ir kalendorius su trečiųjų šalių darbalaukio ir mobiliųjų įrenginių programėlėmis. Bakstelėkite čia, jei reikia daugiau informacijos</string>
     <string name="app_password">Programėlės slaptažodis</string>
     <string name="authentication_required">Autentifikacija privaloma</string>
     <string name="authorization_cancelled">Autorizavimas atšauktas</string>
@@ -366,13 +355,10 @@
     <string name="widget_id">Valdiklio ID: %d</string>
     <string name="add_tags">Pridėti etiketes</string>
     <string name="auto_dismiss_datetime">Automatiškai uždaryti datos ir laiko parinkiklį</string>
-    <string name="upgrade_blurb_2">Aš praleidau tūkstančius valandų dirbdamas su Tasks ir nemokamai skelbiu visą pirminį kodą internete. Kad galėčiau palaikyti savo darbą, kai kurioms funkcijoms reikalinga prenumerata</string>
-    <string name="upgrade_blurb_1">Sveiki! Mano vardas Aleksas. Esu nepriklausomas Tasks kūrėjas</string>
     <string name="place_settings">Vietos nustatymai</string>
     <string name="decsync_selection_description">Failais paremta sinchronizacija</string>
     <string name="etesync_selection_description">Sinchronizacija paremta abipusiu šifravimu</string>
     <string name="caldav_selection_description">Sinchronizacija paremta atviro interneto standartais</string>
-    <string name="choose_synchronization_service">Pasirinkti platformą</string>
     <string name="collapse_subtasks">Sutraukti antrines užduotis</string>
     <string name="expand_subtasks">Išplėsti antrines užduotis</string>
     <string name="hint_customize_edit_body">Galite tinkinti šį ekraną pertvarkydami arba pašalindami laukus</string>
